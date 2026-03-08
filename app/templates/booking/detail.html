@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+
+{% block title %}Booking 詳情 - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-calendar-check me-2 text-primary"></i>{{ booking.company_name }}
+{% endblock %}
+
+{% block sub_menu %}
+<div class="d-flex gap-2">
+    {% if booking.can_be_edited_by(current_user) %}
+    <a href="{{ url_for('booking.edit', booking_id=booking.id) }}"
+       class="btn btn-outline-primary btn-sm">
+        <i class="fas fa-edit me-1"></i>編輯
+    </a>
+    {% endif %}
+    {% if booking.can_request_extension() and (
+        booking.created_by_id == current_user.id or
+        booking.assigned_sales_id == current_user.id or
+        current_user.has_role('admin') or current_user.has_role('pm')
+    ) %}
+    <a href="{{ url_for('booking.request_extension', booking_id=booking.id) }}"
+       class="btn btn-outline-warning btn-sm">
+        <i class="fas fa-calendar-plus me-1"></i>申請展延
+    </a>
+    {% endif %}
+    <a href="{{ url_for('booking.index') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>返回列表
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+    <!-- 左欄：主要資訊 -->
+    <div class="col-lg-8">
+
+        <!-- 基本資訊 -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+                <h6 class="mb-0"><i class="fas fa-building me-2"></i>客戶資訊</h6>
+                {% set sc = {'pending':'warning','approved':'success','rejected':'danger','expired':'secondary'} %}
+                <span class="badge bg-{{ sc.get(booking.status, 'secondary') }} fs-6">
+                    {{ booking.get_status_display() }}
+                </span>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4 text-muted">公司名稱</dt>
+                    <dd class="col-sm-8 fw-semibold">{{ booking.company_name }}</dd>
+
+                    {% if booking.company_tax_id %}
+                    <dt class="col-sm-4 text-muted">統一編號</dt>
+                    <dd class="col-sm-8">{{ booking.company_tax_id }}</dd>
+                    {% endif %}
+
+                    <dt class="col-sm-4 text-muted">聯絡人</dt>
+                    <dd class="col-sm-8">{{ booking.contact_person or '-' }}</dd>
+
+                    <dt class="col-sm-4 text-muted">聯絡電話</dt>
+                    <dd class="col-sm-8">{{ booking.contact_phone or '-' }}</dd>
+
+                    <dt class="col-sm-4 text-muted">聯絡 Email</dt>
+                    <dd class="col-sm-8">{{ booking.contact_email or '-' }}</dd>
+
+                    <dt class="col-sm-4 text-muted">預算範圍</dt>
+                    <dd class="col-sm-8">
+                        {% if booking.budget_min and booking.budget_min != booking.budget_max %}
+                        {{ '{:,}'.format(booking.budget_min) }} ~ {{ '{:,}'.format(booking.budget_max) }}
+                        {% else %}
+                        {{ '{:,}'.format(booking.budget_max) if booking.budget_max else '-' }}
+                        {% endif %}
+                    </dd>
+
+                    <dt class="col-sm-4 text-muted">預計開始日期</dt>
+                    <dd class="col-sm-8">
+                        {{ booking.expected_start_date.strftime('%Y-%m-%d') if booking.expected_start_date else '-' }}
+                    </dd>
+
+                    <dt class="col-sm-4 text-muted">專案時程</dt>
+                    <dd class="col-sm-8">
+                        {{ booking.project_duration_months ~ ' 個月' if booking.project_duration_months else '-' }}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <!-- 專案需求 -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-clipboard me-2"></i>專案需求</h6>
+            </div>
+            <div class="card-body">
+                <p class="mb-0" style="white-space: pre-wrap;">{{ booking.project_requirements or '-' }}</p>
+            </div>
+        </div>
+
+        <!-- 審核區塊（admin / pm 才顯示） -->
+        {% if booking.can_be_reviewed_by(current_user) %}
+        <div class="card border-0 shadow-sm border-warning mb-4">
+            <div class="card-header bg-warning bg-opacity-10 border-bottom">
+                <h6 class="mb-0"><i class="fas fa-gavel me-2 text-warning"></i>審核此 Booking</h6>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('booking.review', booking_id=booking.id) }}">
+                    <div class="mb-3">
+                        <label class="form-label">審核意見（拒絕時必填）</label>
+                        <textarea class="form-control" name="notes" rows="3"
+                                  placeholder="輸入審核意見..."></textarea>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" name="action" value="approve"
+                                class="btn btn-success"
+                                onclick="return confirm('確定批准此 Booking？')">
+                            <i class="fas fa-check me-1"></i>批准
+                        </button>
+                        <button type="submit" name="action" value="reject"
+                                class="btn btn-danger"
+                                onclick="return confirm('確定拒絕此 Booking？')">
+                            <i class="fas fa-times me-1"></i>拒絕
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 展延申請記錄 -->
+        {% if extension_requests %}
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0">
+                    <i class="fas fa-calendar-plus me-2"></i>展延申請記錄
+                    <span class="badge bg-secondary ms-1">{{ extension_requests | length }}</span>
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for ext in extension_requests %}
+                    <li class="list-group-item px-3">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <span class="badge bg-{{ 'success' if ext.status == 'approved' else 'danger' if ext.status == 'rejected' else 'warning' }} me-2">
+                                    {{ '批准' if ext.status == 'approved' else '拒絕' if ext.status == 'rejected' else '待審核' }}
+                                </span>
+                                延長 <strong>{{ ext.requested_days }}</strong> 天
+                                <br>
+                                <small class="text-muted">{{ ext.reason }}</small>
+                            </div>
+                            <div class="text-end">
+                                <small class="text-muted">
+                                    {{ ext.requested_at.strftime('%Y-%m-%d') if ext.requested_at else '' }}
+                                </small>
+                                {% if ext.status == 'pending' and (current_user.has_role('admin') or current_user.has_role('pm')) %}
+                                <div class="mt-1">
+                                    <form method="POST"
+                                          action="{{ url_for('booking.review_extension', request_id=ext.id) }}"
+                                          class="d-inline">
+                                        <input type="hidden" name="notes" value="">
+                                        <button type="submit" name="action" value="approve"
+                                                class="btn btn-xs btn-success btn-sm py-0 px-2">批准</button>
+                                        <button type="submit" name="action" value="reject"
+                                                class="btn btn-xs btn-danger btn-sm py-0 px-2 ms-1">拒絕</button>
+                                    </form>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 相關 BOM -->
+        {% if related_boms %}
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0">
+                    <i class="fas fa-file-alt me-2"></i>相關 BOM
+                    <span class="badge bg-secondary ms-1">{{ related_boms | length }}</span>
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                <ul class="list-group list-group-flush">
+                    {% for bom in related_boms %}
+                    <li class="list-group-item px-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <a href="{{ url_for('bom.detail', bom_id=bom.id) }}"
+                                   class="fw-semibold text-decoration-none">
+                                    {{ bom.bom_number }}
+                                </a>
+                                <br>
+                                <small class="text-muted">{{ bom.project_name }}</small>
+                            </div>
+                            <span class="badge bg-{{ bom.get_status_color() }}">
+                                {{ bom.get_status_display() }}
+                            </span>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+
+    <!-- 右欄：側邊資訊 -->
+    <div class="col-lg-4">
+
+        <!-- 審核資訊 -->
+        {% if booking.reviewed_by %}
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-gavel me-2"></i>審核資訊</h6>
+            </div>
+            <div class="card-body p-3">
+                <dl class="row mb-0 small">
+                    <dt class="col-5 text-muted">審核者</dt>
+                    <dd class="col-7">{{ booking.reviewed_by.name }}</dd>
+                    <dt class="col-5 text-muted">審核時間</dt>
+                    <dd class="col-7">
+                        {{ booking.reviewed_at.strftime('%Y-%m-%d') if booking.reviewed_at else '-' }}
+                    </dd>
+                    {% if booking.review_notes %}
+                    <dt class="col-5 text-muted">審核意見</dt>
+                    <dd class="col-7">{{ booking.review_notes }}</dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 負責業務 -->
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-user-tie me-2"></i>負責業務</h6>
+            </div>
+            <div class="card-body p-3 small">
+                <div class="fw-semibold">{{ booking.assigned_sales.name if booking.assigned_sales else '-' }}</div>
+                {% if booking.assigned_sales %}
+                <div class="text-muted">{{ booking.assigned_sales.email }}</div>
+                {% if booking.assigned_sales.extension %}
+                <div class="text-muted">分機：{{ booking.assigned_sales.extension }}</div>
+                {% endif %}
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 記錄資訊 -->
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>記錄資訊</h6>
+            </div>
+            <div class="card-body p-3">
+                <dl class="row mb-0 small">
+                    <dt class="col-5 text-muted">建立者</dt>
+                    <dd class="col-7">{{ booking.created_by.name if booking.created_by else '-' }}</dd>
+                    <dt class="col-5 text-muted">建立時間</dt>
+                    <dd class="col-7">
+                        {{ booking.created_at.strftime('%Y-%m-%d') if booking.created_at else '-' }}
+                    </dd>
+                    <dt class="col-5 text-muted">有效期限</dt>
+                    <dd class="col-7">
+                        {{ booking.expires_at.strftime('%Y-%m-%d') if booking.expires_at else '-' }}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <!-- 刪除 -->
+        {% if booking.created_by_id == current_user.id or has_permission(current_user, 'booking_delete') %}
+        <div class="card border-0 shadow-sm border-danger">
+            <div class="card-body p-3">
+                <form method="POST"
+                      action="{{ url_for('booking.delete', booking_id=booking.id) }}"
+                      onsubmit="return confirm('確定要刪除此 Booking？此動作無法復原。')">
+                    <button type="submit" class="btn btn-outline-danger btn-sm w-100">
+                        <i class="fas fa-trash me-1"></i>刪除此 Booking
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}

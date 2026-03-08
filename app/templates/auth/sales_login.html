@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>業務人員登入 - {{ config.SYSTEM_NAME }}</title>
+
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <style>
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+        .login-card {
+            width: 100%;
+            max-width: 420px;
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+            background: rgba(255,255,255,0.97);
+        }
+        .login-header {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: #fff;
+            padding: 2rem;
+            text-align: center;
+        }
+        .login-header h2 { font-weight: 300; margin: 0; }
+        .login-header .subtitle { margin-top: .5rem; font-size: .875rem; opacity: .9; }
+        .login-body { padding: 2rem 1.75rem; }
+        .form-control {
+            border-radius: .625rem;
+            border-color: #e0e0e0;
+        }
+        .form-control:focus {
+            border-color: #11998e;
+            box-shadow: 0 0 0 .2rem rgba(17,153,142,.25);
+        }
+        .btn-login {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            border: none;
+            border-radius: .625rem;
+            padding: .75rem;
+            font-weight: 500;
+            transition: transform .2s, box-shadow .2s;
+        }
+        .btn-login:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(17,153,142,.4);
+        }
+        .email-badge {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            border-radius: .625rem;
+            padding: .75rem 1rem;
+            margin-bottom: 1.25rem;
+        }
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            gap: .5rem;
+            margin-bottom: 1.5rem;
+        }
+        .step { width: 2rem; height: 2rem; border-radius: 50%; display: flex;
+                align-items: center; justify-content: center; font-size: .8rem; font-weight: 600; }
+        .step.done   { background: #86efac; color: #166534; }
+        .step.active { background: #11998e; color: #fff; }
+        .step.pending{ background: #e9ecef; color: #adb5bd; }
+    </style>
+</head>
+<body>
+
+<div class="login-card">
+
+    <div class="login-header">
+        <h2><i class="fas fa-sign-in-alt me-2"></i>業務人員登入</h2>
+        <div class="subtitle">{{ config.SYSTEM_NAME }}</div>
+    </div>
+
+    <div class="login-body">
+
+        <!-- 步驟指示器 -->
+        <div class="step-indicator">
+            <div class="step done"><i class="fas fa-check" style="font-size:.7rem;"></i></div>
+            <div class="step active">2</div>
+            <div class="step pending">3</div>
+        </div>
+        <p class="text-center text-muted small mb-4">步驟 2／3：輸入密碼完成登入</p>
+
+        <!-- 顯示目前 Email -->
+        <div class="email-badge d-flex align-items-center gap-2">
+            <i class="fas fa-envelope text-success"></i>
+            <span class="fw-semibold">{{ email }}</span>
+            <a href="{{ url_for('auth.sales_entry') }}" class="ms-auto text-muted small">
+                <i class="fas fa-edit"></i> 更換
+            </a>
+        </div>
+
+        <!-- Flash 訊息 -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            {% set t = {'error':'danger','warning':'warning','success':'success'}.get(category,'info') %}
+            <div class="alert alert-{{ t }} alert-dismissible fade show mb-3" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+        {% endif %}
+        {% endwith %}
+
+        <!-- 密碼表單 -->
+        <form method="POST" action="{{ url_for('auth.sales_login') }}" novalidate>
+            <div class="form-floating mb-3">
+                <input type="password" class="form-control" id="password" name="password"
+                       placeholder="password" required autocomplete="current-password" autofocus>
+                <label for="password"><i class="fas fa-lock me-1"></i> 密碼</label>
+                <div class="invalid-feedback">請輸入密碼</div>
+            </div>
+
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="remember_me" name="remember_me">
+                <label class="form-check-label text-muted small" for="remember_me">
+                    記住我（7 天）
+                </label>
+            </div>
+
+            <button type="submit" class="btn btn-success btn-login w-100">
+                <i class="fas fa-sign-in-alt me-2"></i>登入
+            </button>
+        </form>
+
+        <hr class="mt-3">
+        <p class="text-center mb-0">
+            <a href="{{ url_for('auth.sales_entry') }}" class="text-muted small">
+                <i class="fas fa-arrow-left me-1"></i>上一步
+            </a>
+        </p>
+
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}申請展延 - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-calendar-plus me-2 text-warning"></i>申請展延：{{ booking.company_name }}
+{% endblock %}
+
+{% block sub_menu %}
+<a href="{{ url_for('booking.detail', booking_id=booking.id) }}"
+   class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回詳情
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+
+        <!-- Booking 摘要 -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body py-3">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="text-muted small">公司名稱</div>
+                        <div class="fw-semibold">{{ booking.company_name }}</div>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-muted small">目前狀態</div>
+                        {% set sc = {'pending':'warning','approved':'success','rejected':'danger','expired':'secondary'} %}
+                        <span class="badge bg-{{ sc.get(booking.status, 'secondary') }}">
+                            {{ booking.get_status_display() }}
+                        </span>
+                    </div>
+                    <div class="col-4">
+                        <div class="text-muted small">有效期限</div>
+                        <div class="fw-semibold">
+                            {{ booking.expires_at.strftime('%Y-%m-%d') if booking.expires_at else '-' }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 展延申請表單 -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-calendar-plus me-2 text-warning"></i>展延申請</h6>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST"
+                      action="{{ url_for('booking.request_extension', booking_id=booking.id) }}"
+                      novalidate>
+
+                    <!-- 展延天數 -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">
+                            展延天數 <span class="text-danger">*</span>
+                        </label>
+                        <!-- 快速選擇 -->
+                        <div class="d-flex gap-2 mb-2 flex-wrap">
+                            {% for days in [7, 14, 30, 60, 90] %}
+                            <button type="button" class="btn btn-sm btn-outline-secondary days-btn"
+                                    data-days="{{ days }}">
+                                {{ days }} 天
+                            </button>
+                            {% endfor %}
+                        </div>
+                        <input type="number" class="form-control" id="requested_days"
+                               name="requested_days" min="1" max="90"
+                               placeholder="輸入 1–90 天" required>
+                        <div class="form-text">最多可申請 90 天</div>
+                    </div>
+
+                    <!-- 展延理由 -->
+                    <div class="mb-4">
+                        <label for="reason" class="form-label fw-semibold">
+                            展延理由 <span class="text-danger">*</span>
+                        </label>
+                        <textarea class="form-control" id="reason" name="reason" rows="4"
+                                  placeholder="請說明申請展延的原因..." required></textarea>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-warning">
+                            <i class="fas fa-paper-plane me-2"></i>提交展延申請
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 快速選擇天數按鈕
+document.querySelectorAll('.days-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        document.getElementById('requested_days').value = this.dataset.days;
+        document.querySelectorAll('.days-btn').forEach(function(b) {
+            b.classList.remove('btn-secondary');
+            b.classList.add('btn-outline-secondary');
+        });
+        this.classList.remove('btn-outline-secondary');
+        this.classList.add('btn-secondary');
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}{{ '編輯' if tier else '新增' }}價格級距 - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-tag me-2 text-primary"></i>
+{{ '編輯級距：' + tier.tier_name if tier else '新增價格級距' }}
+{% endblock %}
+
+{% block sub_menu %}
+<a href="{{ url_for('product.pricing') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回列表
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <form method="POST"
+                      action="{{ url_for('product.edit_pricing_tier', tier_id=tier.id) if tier else url_for('product.create_pricing_tier') }}"
+                      novalidate>
+
+                    <!-- 方案類型（新增時可選，編輯時唯讀） -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">
+                            方案類型 <span class="text-danger">*</span>
+                        </label>
+                        {% if tier %}
+                        <input type="text" class="form-control bg-light"
+                               value="{{ '買斷方案' if tier.plan_type == 'onetime' else '訂閱方案' }}"
+                               readonly>
+                        <input type="hidden" name="plan_type" value="{{ tier.plan_type }}">
+                        {% else %}
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="plan_type"
+                                       value="onetime" id="pt_onetime" required>
+                                <label class="form-check-label" for="pt_onetime">買斷方案</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="plan_type"
+                                       value="yearly" id="pt_yearly">
+                                <label class="form-check-label" for="pt_yearly">訂閱方案</label>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- 級距名稱 -->
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" id="tier_name" name="tier_name"
+                               value="{{ tier.tier_name if tier else '' }}"
+                               placeholder="name" required>
+                        <label for="tier_name">級距名稱 <span class="text-danger">*</span></label>
+                    </div>
+
+                    <!-- 點數範圍 -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <div class="form-floating">
+                                <input type="number" class="form-control" id="min_points"
+                                       name="min_points"
+                                       value="{{ tier.min_points if tier else 0 }}"
+                                       placeholder="min" min="0" required>
+                                <label for="min_points">最低點數 <span class="text-danger">*</span></label>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="form-floating">
+                                <input type="number" class="form-control" id="max_points"
+                                       name="max_points"
+                                       value="{{ tier.max_points if tier and tier.max_points else '' }}"
+                                       placeholder="max" min="0">
+                                <label for="max_points">最高點數（空白=無上限）</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 每點價格 -->
+                    <div class="form-floating mb-3">
+                        <input type="number" class="form-control" id="price_per_point"
+                               name="price_per_point"
+                               value="{{ tier.price_per_point if tier else '' }}"
+                               placeholder="price" min="1" required>
+                        <label for="price_per_point">每點價格 <span class="text-danger">*</span></label>
+                    </div>
+
+                    <!-- 生效日期 -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <div class="form-floating">
+                                <input type="date" class="form-control" id="effective_date"
+                                       name="effective_date"
+                                       value="{{ tier.effective_date.strftime('%Y-%m-%d') if tier and tier.effective_date else '' }}"
+                                       placeholder="date">
+                                <label for="effective_date">生效日期</label>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="form-floating">
+                                <input type="date" class="form-control" id="end_date"
+                                       name="end_date"
+                                       value="{{ tier.end_date.strftime('%Y-%m-%d') if tier and tier.end_date else '' }}"
+                                       placeholder="date">
+                                <label for="end_date">結束日期（選填）</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 設定 -->
+                    <div class="d-flex gap-4 mb-4">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="is_default"
+                                   name="is_default"
+                                   {{ 'checked' if tier and tier.is_default }}>
+                            <label class="form-check-label" for="is_default">設為預設級距</label>
+                        </div>
+                        {% if tier %}
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="is_active"
+                                   name="is_active"
+                                   {{ 'checked' if tier and tier.is_active }}>
+                            <label class="form-check-label" for="is_active">啟用</label>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>
+                            {{ '儲存變更' if tier else '建立級距' }}
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

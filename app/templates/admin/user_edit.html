@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}編輯使用者 - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-user-edit me-2 text-primary"></i>編輯使用者：{{ user.name }}
+{% endblock %}
+
+{% block sub_menu %}
+<div class="d-flex gap-2">
+    <a href="{{ url_for('admin.user_permissions', user_id=user.id) }}"
+       class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-shield-alt me-1"></i>權限設定
+    </a>
+    <a href="{{ url_for('admin.users') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>返回列表
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+    <!-- 基本資料編輯 -->
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-user me-2"></i>基本資料</h6>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST" action="{{ url_for('admin.edit_user', user_id=user.id) }}" novalidate>
+
+                    <!-- Email（唯讀） -->
+                    <div class="form-floating mb-3">
+                        <input type="email" class="form-control bg-light" value="{{ user.email }}"
+                               placeholder="email" readonly>
+                        <label><i class="fas fa-envelope me-1"></i> Email（不可修改）</label>
+                    </div>
+
+                    <!-- 姓名 -->
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" id="name" name="name"
+                               value="{{ user.name }}" placeholder="name" required>
+                        <label for="name"><i class="fas fa-user me-1"></i> 姓名</label>
+                    </div>
+
+                    <!-- 分機 -->
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" id="extension" name="extension"
+                               value="{{ user.extension or '' }}" placeholder="extension">
+                        <label for="extension"><i class="fas fa-phone me-1"></i> 分機號碼（選填）</label>
+                    </div>
+
+                    <!-- 啟用狀態 -->
+                    <div class="form-check form-switch mb-4">
+                        <input class="form-check-input" type="checkbox" id="is_active"
+                               name="is_active" {{ 'checked' if user.is_active }}>
+                        <label class="form-check-label" for="is_active">帳號啟用中</label>
+                    </div>
+
+                    <!-- 角色 -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">
+                            <i class="fas fa-user-tag me-1"></i>指派角色
+                        </label>
+                        <div class="row g-2">
+                            {% for role in roles %}
+                            <div class="col-6">
+                                <div class="form-check border rounded p-2">
+                                    <input class="form-check-input" type="checkbox"
+                                           name="roles" value="{{ role.id }}"
+                                           id="role_{{ role.id }}"
+                                           {{ 'checked' if role in user.roles }}>
+                                    <label class="form-check-label w-100" for="role_{{ role.id }}">
+                                        <span class="fw-semibold">{{ role.display_name }}</span>
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>儲存變更
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 重設密碼 -->
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-key me-2"></i>重設密碼</h6>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST"
+                      action="{{ url_for('admin.reset_password', user_id=user.id) }}"
+                      onsubmit="return confirm('確定要重設 {{ user.name }} 的密碼？')"
+                      novalidate>
+
+                    <div class="form-floating mb-3">
+                        <input type="password" class="form-control" id="new_password"
+                               name="new_password" placeholder="password"
+                               required minlength="6">
+                        <label for="new_password">新密碼（至少 6 碼）</label>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-outline-warning">
+                            <i class="fas fa-key me-2"></i>重設密碼
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+
+        <!-- 帳號資訊 -->
+        <div class="card border-0 shadow-sm mt-3">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>帳號資訊</h6>
+            </div>
+            <div class="card-body p-3">
+                <dl class="row mb-0 small">
+                    <dt class="col-5 text-muted">使用者 ID</dt>
+                    <dd class="col-7"># {{ user.id }}</dd>
+                    <dt class="col-5 text-muted">建立時間</dt>
+                    <dd class="col-7">
+                        {{ user.created_at.strftime('%Y-%m-%d') if user.created_at else '-' }}
+                    </dd>
+                    <dt class="col-5 text-muted">最後登入</dt>
+                    <dd class="col-7">
+                        {{ user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else '從未登入' }}
+                    </dd>
+                    <dt class="col-5 text-muted">帳號狀態</dt>
+                    <dd class="col-7">
+                        {% if user.is_active %}
+                        <span class="badge bg-success">啟用</span>
+                        {% else %}
+                        <span class="badge bg-secondary">停用</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

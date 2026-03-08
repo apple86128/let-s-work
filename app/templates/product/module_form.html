@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}{{ '編輯' if module else '新增' }}模組 - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-cube me-2 text-primary"></i>{{ '編輯模組：' + module.name if module else '新增模組' }}
+{% endblock %}
+
+{% block sub_menu %}
+{% if module %}
+<a href="{{ url_for('product.module_detail', module_id=module.id) }}"
+   class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回詳情
+</a>
+{% else %}
+<a href="{{ url_for('product.modules') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回列表
+</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <form method="POST"
+                      action="{{ url_for('product.edit_module', module_id=module.id) if module else url_for('product.create_module') }}"
+                      novalidate>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-8">
+                            <div class="form-floating">
+                                <input type="text" class="form-control" id="name" name="name"
+                                       value="{{ module.name if module else '' }}"
+                                       placeholder="name" required>
+                                <label for="name">模組名稱 <span class="text-danger">*</span></label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-floating">
+                                <input type="text" class="form-control {{ 'bg-light' if module else '' }}"
+                                       id="code" name="code"
+                                       value="{{ module.code if module else '' }}"
+                                       placeholder="code"
+                                       {{ 'readonly' if module }}
+                                       required style="text-transform:uppercase">
+                                <label for="code">代碼 <span class="text-danger">*</span></label>
+                            </div>
+                            {% if module %}
+                            <div class="form-text">代碼建立後不可修改</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <textarea class="form-control" id="description" name="description"
+                                  placeholder="description" style="height:90px">{{ module.description if module else '' }}</textarea>
+                        <label for="description">模組說明（選填）</label>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <div class="form-floating">
+                                <input type="number" class="form-control" id="base_price_onetime"
+                                       name="base_price_onetime"
+                                       value="{{ module.base_price_onetime if module else 50000 }}"
+                                       placeholder="price" min="0" required>
+                                <label for="base_price_onetime">買斷基礎價格 <span class="text-danger">*</span></label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-floating">
+                                <input type="number" class="form-control" id="base_price_yearly"
+                                       name="base_price_yearly"
+                                       value="{{ module.base_price_yearly if module else 240000 }}"
+                                       placeholder="price" min="0" required>
+                                <label for="base_price_yearly">訂閱基礎價格 <span class="text-danger">*</span></label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <input type="number" class="form-control" id="sort_order" name="sort_order"
+                               value="{{ module.sort_order if module else 0 }}"
+                               placeholder="sort" min="0">
+                        <label for="sort_order">排序順序（數字越小越前面）</label>
+                    </div>
+
+                    {% if module %}
+                    <div class="form-check form-switch mb-4">
+                        <input class="form-check-input" type="checkbox" id="is_active"
+                               name="is_active" {{ 'checked' if module.is_active }}>
+                        <label class="form-check-label" for="is_active">模組啟用中</label>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>
+                            {{ '儲存變更' if module else '建立模組' }}
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

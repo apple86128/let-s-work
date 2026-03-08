@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}{{ '編輯' if booking else '新增' }} Booking - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-calendar-{{ 'edit' if booking else 'plus' }} me-2 text-primary"></i>
+{{ '編輯 Booking：' + booking.company_name if booking else '新增 Booking' }}
+{% endblock %}
+
+{% block sub_menu %}
+{% if booking %}
+<a href="{{ url_for('booking.detail', booking_id=booking.id) }}"
+   class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回詳情
+</a>
+{% else %}
+<a href="{{ url_for('booking.index') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回列表
+</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <form method="POST"
+                      action="{{ url_for('booking.edit', booking_id=booking.id) if booking else url_for('booking.create') }}"
+                      novalidate>
+
+                    <!-- 公司資訊 -->
+                    <h6 class="fw-bold text-primary mb-3">
+                        <i class="fas fa-building me-2"></i>公司資訊
+                    </h6>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-8">
+                            <div class="form-floating">
+                                <input type="text" class="form-control" id="company_name"
+                                       name="company_name"
+                                       value="{{ booking.company_name if booking else '' }}"
+                                       placeholder="company" required>
+                                <label for="company_name">公司名稱 <span class="text-danger">*</span></label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-floating">
+                                <input type="text" class="form-control" id="company_tax_id"
+                                       name="company_tax_id"
+                                       value="{{ booking.company_tax_id if booking else '' }}"
+                                       placeholder="tax">
+                                <label for="company_tax_id">統一編號</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-floating">
+                                <input type="text" class="form-control" id="contact_person"
+                                       name="contact_person"
+                                       value="{{ booking.contact_person if booking else '' }}"
+                                       placeholder="contact">
+                                <label for="contact_person">聯絡人</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-floating">
+                                <input type="tel" class="form-control" id="contact_phone"
+                                       name="contact_phone"
+                                       value="{{ booking.contact_phone if booking else '' }}"
+                                       placeholder="phone">
+                                <label for="contact_phone">聯絡電話</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-floating">
+                                <input type="email" class="form-control" id="contact_email"
+                                       name="contact_email"
+                                       value="{{ booking.contact_email if booking else '' }}"
+                                       placeholder="email">
+                                <label for="contact_email">聯絡 Email</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="mb-4">
+
+                    <!-- 預算與時程 -->
+                    <h6 class="fw-bold text-primary mb-3">
+                        <i class="fas fa-dollar-sign me-2"></i>預算與時程
+                    </h6>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-4">
+                            <div class="form-floating">
+                                <input type="number" class="form-control" id="budget_max"
+                                       name="budget_max"
+                                       value="{{ booking.budget_max if booking else '' }}"
+                                       placeholder="max" min="0" required>
+                                <label for="budget_max">預算上限 <span class="text-danger">*</span></label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-floating">
+                                <input type="number" class="form-control" id="budget_min"
+                                       name="budget_min"
+                                       value="{{ booking.budget_min if booking else '' }}"
+                                       placeholder="min" min="0">
+                                <label for="budget_min">預算下限（選填）</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-floating">
+                                <input type="number" class="form-control" id="project_duration_months"
+                                       name="project_duration_months"
+                                       value="{{ booking.project_duration_months if booking else '' }}"
+                                       placeholder="months" min="1" max="120">
+                                <label for="project_duration_months">時程（月）</label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-floating">
+                                <input type="date" class="form-control" id="expected_start_date"
+                                       name="expected_start_date"
+                                       value="{{ booking.expected_start_date.strftime('%Y-%m-%d') if booking and booking.expected_start_date else '' }}"
+                                       placeholder="date">
+                                <label for="expected_start_date">預計開始日期</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="mb-4">
+
+                    <!-- 專案需求 -->
+                    <h6 class="fw-bold text-primary mb-3">
+                        <i class="fas fa-clipboard me-2"></i>專案需求
+                    </h6>
+
+                    <div class="mb-4">
+                        <textarea class="form-control" id="project_requirements"
+                                  name="project_requirements" rows="5"
+                                  placeholder="詳細描述客戶的專案需求、功能要求..." required>{{ booking.project_requirements if booking else '' }}</textarea>
+                        <div class="form-text">請詳細描述需求，有助於後續 BOM 製作</div>
+                    </div>
+
+                    <!-- 業務指派（admin/pm 才顯示） -->
+                    {% if sales_users %}
+                    <hr class="mb-4">
+                    <h6 class="fw-bold text-primary mb-3">
+                        <i class="fas fa-user-tie me-2"></i>業務指派
+                    </h6>
+                    <div class="mb-4">
+                        <select class="form-select" name="assigned_sales_id">
+                            <option value="">-- 不指派 --</option>
+                            {% for user in sales_users %}
+                            <option value="{{ user.id }}"
+                                {{ 'selected' if booking and booking.assigned_sales_id == user.id }}>
+                                {{ user.name }}
+                                {% if user.extension %}（分機 {{ user.extension }}）{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+
+                    <!-- 送出按鈕 -->
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>
+                            {{ '儲存變更' if booking else '建立 Booking' }}
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

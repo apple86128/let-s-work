@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}{{ '編輯' if function else '新增' }}功能 - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-puzzle-piece me-2 text-primary"></i>
+{{ '編輯功能：' + function.name if function else '新增功能 - ' + module.name }}
+{% endblock %}
+
+{% block sub_menu %}
+<a href="{{ url_for('product.module_detail', module_id=module.id) }}"
+   class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回 {{ module.name }}
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0">
+                    <span class="badge bg-primary me-2">{{ module.code }}</span>{{ module.name }}
+                </h6>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST"
+                      action="{{ url_for('product.edit_function', function_id=function.id) if function else url_for('product.create_function', module_id=module.id) }}"
+                      novalidate>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-8">
+                            <div class="form-floating">
+                                <input type="text" class="form-control" id="name" name="name"
+                                       value="{{ function.name if function else '' }}"
+                                       placeholder="name" required>
+                                <label for="name">功能名稱 <span class="text-danger">*</span></label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-floating">
+                                <input type="text"
+                                       class="form-control {{ 'bg-light' if function else '' }}"
+                                       id="code" name="code"
+                                       value="{{ function.code if function else '' }}"
+                                       placeholder="code"
+                                       {{ 'readonly' if function }}
+                                       required style="text-transform:uppercase">
+                                <label for="code">代碼 <span class="text-danger">*</span></label>
+                            </div>
+                            {% if function %}
+                            <div class="form-text">代碼建立後不可修改</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <textarea class="form-control" id="description" name="description"
+                                  placeholder="description" style="height:80px">{{ function.description if function else '' }}</textarea>
+                        <label for="description">功能說明（選填）</label>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <div class="form-floating">
+                                <input type="number" class="form-control" id="points_per_unit"
+                                       name="points_per_unit"
+                                       value="{{ function.points_per_unit if function else '' }}"
+                                       placeholder="points" min="1" required>
+                                <label for="points_per_unit">單位點數 <span class="text-danger">*</span></label>
+                            </div>
+                            <div class="form-text">每個計費單位所需的點數</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-floating">
+                                <input type="text" class="form-control" id="unit_name"
+                                       name="unit_name"
+                                       value="{{ function.unit_name if function else '台' }}"
+                                       placeholder="unit">
+                                <label for="unit_name">計費單位名稱</label>
+                            </div>
+                            <div class="form-text">例如：台、套、個、次</div>
+                        </div>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <input type="number" class="form-control" id="sort_order"
+                               name="sort_order"
+                               value="{{ function.sort_order if function else 0 }}"
+                               placeholder="sort" min="0">
+                        <label for="sort_order">排序順序</label>
+                    </div>
+
+                    {% if function %}
+                    <div class="form-check form-switch mb-4">
+                        <input class="form-check-input" type="checkbox" id="is_active"
+                               name="is_active" {{ 'checked' if function.is_active }}>
+                        <label class="form-check-label" for="is_active">功能啟用中</label>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>
+                            {{ '儲存變更' if function else '建立功能' }}
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

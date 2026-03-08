@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+
+{% block title %}審核 BOM - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-gavel me-2 text-warning"></i>審核 BOM：{{ bom.bom_number }}
+{% endblock %}
+
+{% block sub_menu %}
+<a href="{{ url_for('bom.detail', bom_id=bom.id) }}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回詳情
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+    <!-- 左欄：BOM 明細 -->
+    <div class="col-lg-7">
+
+        <!-- 客戶資訊 -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-building me-2"></i>客戶與專案</h6>
+            </div>
+            <div class="card-body py-2">
+                <dl class="row mb-0 small">
+                    <dt class="col-4 text-muted">客戶公司</dt>
+                    <dd class="col-8 fw-semibold">{{ bom.customer_company }}</dd>
+                    <dt class="col-4 text-muted">專案名稱</dt>
+                    <dd class="col-8">{{ bom.project_name }}</dd>
+                    <dt class="col-4 text-muted">方案</dt>
+                    <dd class="col-8">{{ bom.get_plan_type_display() }}</dd>
+                    <dt class="col-4 text-muted">負責業務</dt>
+                    <dd class="col-8">{{ bom.assigned_sales.name if bom.assigned_sales else '-' }}</dd>
+                </dl>
+            </div>
+        </div>
+
+        <!-- 功能項目 -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0">
+                    <i class="fas fa-list-check me-2"></i>功能項目
+                    <span class="badge bg-secondary ms-1">{{ bom.items | length }}</span>
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                {% for module_id, group in bom_items_by_module.items() %}
+                <div class="border-bottom">
+                    <div class="px-3 py-2 bg-light d-flex align-items-center gap-2">
+                        <span class="badge bg-primary">{{ group.module.code }}</span>
+                        <span class="fw-semibold small">{{ group.module.name }}</span>
+                    </div>
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            {% for item in group.item_list %}
+                            <tr>
+                                <td class="small">{{ item.function.name }}</td>
+                                <td class="text-muted small text-center">{{ item.function.unit_name }}</td>
+                                <td class="text-end">
+                                    <span class="badge bg-secondary">{{ item.unit_points }} pts</span>
+                                </td>
+                                <td class="text-end small">× {{ item.quantity }}</td>
+                                <td class="text-end fw-semibold">{{ item.total_points }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endfor %}
+                <div class="px-3 py-2 bg-light d-flex justify-content-between">
+                    <span class="fw-semibold">總計點數</span>
+                    <span class="badge bg-primary fs-6">{{ bom.total_points }} pts</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 價格計算說明 -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-calculator me-2 text-primary"></i>系統建議報價</h6>
+            </div>
+            <div class="card-body small">
+                <div class="row g-2 text-center mb-2">
+                    <div class="col-4">
+                        <div class="border rounded p-2">
+                            <div class="text-muted">模組費用</div>
+                            <div class="fw-bold">{{ '{:,}'.format(bom.base_modules_cost) }}</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="border rounded p-2">
+                            <div class="text-muted">點數費用</div>
+                            <div class="fw-bold">{{ '{:,}'.format(bom.points_cost) }}</div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="border rounded p-2 border-primary">
+                            <div class="text-muted">建議價格</div>
+                            <div class="fw-bold text-primary">{{ '{:,}'.format(bom.suggested_price) }}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="text-muted" style="font-size:11px">
+                    人力建議價格將在輸入最終價格後自動計算（最終價格 × 10% + 5% × 年數）
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 右欄：審核操作 -->
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm border-warning">
+            <div class="card-header bg-warning bg-opacity-10 border-bottom">
+                <h6 class="mb-0">
+                    <i class="fas fa-gavel me-2 text-warning"></i>審核操作
+                </h6>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST" action="{{ url_for('bom.review', bom_id=bom.id) }}"
+                      id="review-form" novalidate>
+
+                    <!-- 產品最終價格 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">
+                            產品最終價格
+                            <span class="text-danger">*</span>
+                            <small class="text-muted fw-normal ms-1">（批准時必填）</small>
+                        </label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="final_price"
+                                   name="final_price" min="0"
+                                   value="{{ bom.final_price or bom.suggested_price }}"
+                                   oninput="calcDiscount(); calcLabor()">
+                            <button type="button" class="btn btn-outline-secondary"
+                                    onclick="document.getElementById('final_price').value={{ bom.suggested_price }}; calcDiscount(); calcLabor();">
+                                套用建議
+                            </button>
+                        </div>
+                        <div class="form-text">
+                            折扣率：<strong id="discount-display">-</strong>
+                        </div>
+                    </div>
+
+                    <!-- 維護最終價格 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">最終維護價格</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control" id="final_maintenance_price"
+                                   name="final_maintenance_price" min="0"
+                                   value="{{ bom.final_maintenance_price or '' }}"
+                                   oninput="calcMaintDiscount()">
+                            <button type="button" class="btn btn-outline-secondary"
+                                    id="btn-use-labor">
+                                套用建議
+                            </button>
+                        </div>
+                        <div class="form-text">
+                            人力建議：<strong id="labor-display">-</strong>
+                            ／ 維護折扣率：<strong id="maint-discount-display">-</strong>
+                        </div>
+                    </div>
+
+                    <!-- 審核意見 -->
+                    <div class="mb-4">
+                        <label for="notes" class="form-label fw-semibold">
+                            審核意見
+                            <small class="text-muted fw-normal ms-1">（拒絕時必填）</small>
+                        </label>
+                        <textarea class="form-control" id="notes" name="notes" rows="3"
+                                  placeholder="輸入審核意見...">{{ bom.review_notes or '' }}</textarea>
+                    </div>
+
+                    <!-- 操作按鈕 -->
+                    <div class="d-grid gap-2">
+                        <button type="submit" name="action" value="approve"
+                                class="btn btn-success"
+                                onclick="return confirm('確定批准此 BOM？')">
+                            <i class="fas fa-check me-2"></i>批准 BOM
+                        </button>
+                        <button type="submit" name="action" value="reject"
+                                class="btn btn-danger"
+                                onclick="return confirm('確定拒絕此 BOM？')">
+                            <i class="fas fa-times me-2"></i>拒絕 BOM
+                        </button>
+                        <button type="submit" name="action" value="update_price"
+                                class="btn btn-outline-primary">
+                            <i class="fas fa-save me-2"></i>僅更新價格（不改變狀態）
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var suggestedPrice  = {{ bom.suggested_price or 0 }};
+var planYears       = {{ bom.plan_years }};
+var laborSuggested  = {{ bom.labor_suggested_price or 0 }};
+
+function calcDiscount() {
+    var fp = parseInt(document.getElementById('final_price').value) || 0;
+    if (fp > 0 && suggestedPrice > 0) {
+        var rate = (fp / suggestedPrice * 100).toFixed(1);
+        document.getElementById('discount-display').textContent = rate + '%';
+    } else {
+        document.getElementById('discount-display').textContent = '-';
+    }
+}
+
+function calcLabor() {
+    var fp = parseInt(document.getElementById('final_price').value) || 0;
+    if (fp > 0) {
+        laborSuggested = Math.floor(fp * 0.1 + fp * 0.05 * planYears);
+        document.getElementById('labor-display').textContent = laborSuggested.toLocaleString();
+        // 若維護價格欄位空白，自動填入
+        var maint = document.getElementById('final_maintenance_price');
+        if (!maint.value) {
+            maint.value = laborSuggested;
+            calcMaintDiscount();
+        }
+    } else {
+        document.getElementById('labor-display').textContent = '-';
+    }
+}
+
+function calcMaintDiscount() {
+    var mp = parseInt(document.getElementById('final_maintenance_price').value) || 0;
+    if (mp > 0 && laborSuggested > 0) {
+        var rate = (mp / laborSuggested * 100).toFixed(1);
+        document.getElementById('maint-discount-display').textContent = rate + '%';
+    } else {
+        document.getElementById('maint-discount-display').textContent = '-';
+    }
+}
+
+document.getElementById('btn-use-labor').addEventListener('click', function() {
+    document.getElementById('final_maintenance_price').value = laborSuggested;
+    calcMaintDiscount();
+});
+
+// 頁面載入時初始計算
+document.addEventListener('DOMContentLoaded', function() {
+    calcDiscount();
+    calcLabor();
+    calcMaintDiscount();
+});
+</script>
+{% endblock %}

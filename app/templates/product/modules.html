@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}模組管理 - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-cubes me-2 text-primary"></i>模組管理
+{% endblock %}
+
+{% block sub_menu %}
+<a href="{{ url_for('product.create_module') }}" class="btn btn-primary btn-sm">
+    <i class="fas fa-plus me-1"></i>新增模組
+</a>
+{% endblock %}
+
+{% block content %}
+
+<!-- 統計卡片 -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-2 fw-bold text-primary">{{ stats.total_modules }}</div>
+            <div class="text-muted small">總模組數</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-2 fw-bold text-success">{{ stats.active_modules }}</div>
+            <div class="text-muted small">啟用中</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-2 fw-bold text-secondary">{{ stats.inactive_modules }}</div>
+            <div class="text-muted small">已停用</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-2 fw-bold text-info">{{ stats.total_functions }}</div>
+            <div class="text-muted small">功能總數</div>
+        </div>
+    </div>
+</div>
+
+<!-- 模組列表 -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:60px">排序</th>
+                        <th>模組名稱</th>
+                        <th>代碼</th>
+                        <th class="text-end">買斷基礎價</th>
+                        <th class="text-end">訂閱基礎價</th>
+                        <th class="text-center">功能數</th>
+                        <th>狀態</th>
+                        <th class="text-end">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for module in modules %}
+                    <tr class="{{ '' if module.is_active else 'table-secondary opacity-75' }}">
+                        <td class="text-muted small">{{ module.sort_order }}</td>
+                        <td>
+                            <a href="{{ url_for('product.module_detail', module_id=module.id) }}"
+                               class="fw-semibold text-decoration-none">
+                                {{ module.name }}
+                            </a>
+                            {% if module.description %}
+                            <br><small class="text-muted">{{ module.description }}</small>
+                            {% endif %}
+                        </td>
+                        <td><code class="text-primary">{{ module.code }}</code></td>
+                        <td class="text-end">{{ '{:,}'.format(module.base_price_onetime) }}</td>
+                        <td class="text-end">{{ '{:,}'.format(module.base_price_yearly) }}</td>
+                        <td class="text-center">
+                            <span class="badge bg-info">{{ module.functions | length }}</span>
+                        </td>
+                        <td>
+                            {% if module.is_active %}
+                            <span class="badge bg-success">啟用</span>
+                            {% else %}
+                            <span class="badge bg-secondary">停用</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                <a href="{{ url_for('product.module_detail', module_id=module.id) }}"
+                                   class="btn btn-outline-primary" title="查看">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="{{ url_for('product.edit_module', module_id=module.id) }}"
+                                   class="btn btn-outline-secondary" title="編輯">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <form method="POST"
+                                      action="{{ url_for('product.toggle_module_status', module_id=module.id) }}"
+                                      class="d-inline">
+                                    <button type="submit"
+                                            class="btn btn-outline-{{ 'warning' if module.is_active else 'success' }}"
+                                            title="{{ '停用' if module.is_active else '啟用' }}"
+                                            onclick="return confirm('確定要{{ '停用' if module.is_active else '啟用' }}此模組？')">
+                                        <i class="fas fa-{{ 'ban' if module.is_active else 'check' }}"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">
+                            <i class="fas fa-cubes fa-2x mb-2 d-block opacity-25"></i>
+                            尚未建立任何模組
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

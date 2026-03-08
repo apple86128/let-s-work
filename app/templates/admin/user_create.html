@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}新增使用者 - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-user-plus me-2 text-primary"></i>新增使用者
+{% endblock %}
+
+{% block sub_menu %}
+<a href="{{ url_for('admin.users') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回列表
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <form method="POST" action="{{ url_for('admin.create_user') }}" novalidate>
+
+                    <!-- Email -->
+                    <div class="form-floating mb-3">
+                        <input type="email" class="form-control" id="email" name="email"
+                               placeholder="email" required autocomplete="off">
+                        <label for="email"><i class="fas fa-envelope me-1"></i> Email</label>
+                    </div>
+
+                    <!-- 姓名 -->
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" id="name" name="name"
+                               placeholder="name" required>
+                        <label for="name"><i class="fas fa-user me-1"></i> 姓名</label>
+                    </div>
+
+                    <!-- 密碼 -->
+                    <div class="form-floating mb-3">
+                        <input type="password" class="form-control" id="password" name="password"
+                               placeholder="password" required minlength="6">
+                        <label for="password"><i class="fas fa-lock me-1"></i> 密碼（至少 6 碼）</label>
+                    </div>
+
+                    <!-- 分機 -->
+                    <div class="form-floating mb-3">
+                        <input type="text" class="form-control" id="extension" name="extension"
+                               placeholder="extension">
+                        <label for="extension"><i class="fas fa-phone me-1"></i> 分機號碼（選填）</label>
+                    </div>
+
+                    <!-- 角色 -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">
+                            <i class="fas fa-user-tag me-1"></i>指派角色
+                        </label>
+                        <div class="row g-2">
+                            {% for role in roles %}
+                            <div class="col-6">
+                                <div class="form-check border rounded p-2">
+                                    <input class="form-check-input" type="checkbox"
+                                           name="roles" value="{{ role.id }}"
+                                           id="role_{{ role.id }}">
+                                    <label class="form-check-label w-100" for="role_{{ role.id }}">
+                                        <span class="fw-semibold">{{ role.display_name }}</span>
+                                        {% if role.description %}
+                                        <br><small class="text-muted">{{ role.description }}</small>
+                                        {% endif %}
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-user-plus me-2"></i>建立使用者
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

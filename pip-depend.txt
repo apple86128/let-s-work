@@ -1,0 +1,4 @@
+pip install flask flask-sqlalchemy flask-login werkzeug
+pip install python-dotenv
+
+pip install pytest pytest-flask

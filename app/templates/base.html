@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}{{ config.SYSTEM_NAME }}{% endblock %}</title>
+
+    <!-- Bootstrap CSS（本地） -->
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- 自訂樣式 -->
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+
+    <style>
+        /* ── 版面基礎 ── */
+        body {
+            padding-top: 56px; /* 固定導覽列高度 */
+            background-color: #f8f9fa;
+        }
+
+        /* ── 側邊欄 ── */
+        .sidebar {
+            position: sticky;
+            top: 56px;
+            height: calc(100vh - 56px);
+            overflow-y: auto;
+            border-right: 1px solid #dee2e6;
+        }
+
+        .sidebar .nav-link {
+            color: #495057;
+            padding: 0.6rem 1rem;
+            border-radius: 0.375rem;
+            margin-bottom: 0.15rem;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+        .sidebar .nav-link:hover  { background-color: #e9ecef; color: #0d6efd; }
+        .sidebar .nav-link.active { background-color: #0d6efd; color: #fff; }
+
+        .sidebar .submenu .nav-link {
+            padding-left: 2.25rem;
+            font-size: 0.875rem;
+        }
+
+        /* ── 頁首標題列 ── */
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            padding: 1rem 0 0.75rem;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        /* ── Flash 訊息 ── */
+        .flash-container { margin-bottom: 1rem; }
+
+        /* ── 響應式：手機版側邊欄折疊 ── */
+        @media (max-width: 767.98px) {
+            .sidebar { position: relative; top: 0; height: auto; }
+        }
+    </style>
+
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════
+     頂部導覽列
+══════════════════════════════════════════ -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
+    <div class="container-fluid">
+
+        <!-- 品牌 Logo -->
+        <a class="navbar-brand fw-bold"
+           href="{{ url_for('dashboard.index') if current_user.is_authenticated else url_for('auth.login') }}">
+            <i class="fas fa-chart-line me-2"></i>{{ config.SYSTEM_NAME }}
+        </a>
+
+        <!-- 手機版側邊欄切換 -->
+        <button class="navbar-toggler" type="button"
+                data-bs-toggle="collapse" data-bs-target="#sidebarMenu"
+                aria-controls="sidebarMenu" aria-expanded="false" aria-label="切換選單">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <!-- 右側使用者下拉 -->
+        {% if current_user.is_authenticated %}
+        <div class="navbar-nav ms-auto">
+            <div class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle d-flex align-items-center gap-1"
+                   href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-user-circle"></i>
+                    <span>{{ current_user.name }}</span>
+                    {% if current_user.get_primary_role() %}
+                    <small class="text-light opacity-75">
+                        ({{ current_user.get_primary_role().display_name }})
+                    </small>
+                    {% endif %}
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li>
+                        <a class="dropdown-item" href="{{ url_for('auth.login') }}">
+                            <i class="fas fa-user me-2"></i>個人資料
+                        </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}">
+                            <i class="fas fa-sign-out-alt me-2"></i>登出
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+</nav>
+
+<!-- ══════════════════════════════════════════
+     主版面：側邊欄 + 內容區
+══════════════════════════════════════════ -->
+<div class="container-fluid">
+    <div class="row">
+
+        {% if current_user.is_authenticated %}
+        <!-- ── 左側功能選單 ── -->
+        <nav id="sidebarMenu"
+             class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse pt-3">
+            <div class="sidebar-content">
+
+                {% set menu_items = get_user_menu_items(current_user) %}
+                {% for item in menu_items %}
+                <div class="mb-1">
+                    {% if item.submenu %}
+                    <!-- 有子選單 -->
+                    <a class="nav-link d-flex justify-content-between align-items-center"
+                       data-bs-toggle="collapse"
+                       href="#sub-{{ loop.index }}"
+                       role="button" aria-expanded="false"
+                       aria-controls="sub-{{ loop.index }}">
+                        <span><i class="{{ item.icon }} me-2"></i>{{ item.name }}</span>
+                        <i class="fas fa-chevron-down small"></i>
+                    </a>
+                    <div class="collapse submenu" id="sub-{{ loop.index }}">
+                        {% for subitem in item.submenu %}
+                        <a class="nav-link" href="{{ url_for(subitem.url) }}">
+                            <i class="fas fa-circle me-2" style="font-size:5px;vertical-align:middle;"></i>
+                            {{ subitem.name }}
+                        </a>
+                        {% endfor %}
+                    </div>
+
+                    {% else %}
+                    <!-- 無子選單 -->
+                    <a class="nav-link" href="{{ url_for(item.url) }}">
+                        <i class="{{ item.icon }} me-2"></i>{{ item.name }}
+                    </a>
+                    {% endif %}
+                </div>
+                {% endfor %}
+
+            </div>
+        </nav>
+        {% endif %}
+
+        <!-- ── 主內容區 ── -->
+        <main class="{% if current_user.is_authenticated %}col-md-9 ms-sm-auto col-lg-10{% else %}col-12{% endif %} px-md-4">
+
+            {% if current_user.is_authenticated %}
+            <!-- 頁首標題列 -->
+            <div class="page-header">
+                <h1 class="h2 mb-0">{% block page_title %}Dashboard{% endblock %}</h1>
+                <div>{% block sub_menu %}{% endblock %}</div>
+            </div>
+            {% endif %}
+
+            <!-- Flash 訊息 -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="flash-container">
+                {% for category, message in messages %}
+                {% set alert_type = {
+                    'error':   'danger',
+                    'warning': 'warning',
+                    'success': 'success',
+                    'info':    'info'
+                }.get(category, 'info') %}
+                {% set icon = {
+                    'danger':  'fas fa-exclamation-triangle',
+                    'warning': 'fas fa-exclamation-circle',
+                    'success': 'fas fa-check-circle',
+                    'info':    'fas fa-info-circle'
+                }.get(alert_type, 'fas fa-info-circle') %}
+                <div class="alert alert-{{ alert_type }} alert-dismissible fade show flash-msg" role="alert">
+                    <i class="{{ icon }} me-2"></i>{{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="關閉"></button>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+
+            <!-- 頁面主體內容 -->
+            <div class="content-area pb-4">
+                {% block content %}{% endblock %}
+            </div>
+
+        </main>
+    </div>
+</div>
+
+<!-- Bootstrap JS（本地，含 Popper） -->
+<script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+
+{% block extra_js %}{% endblock %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+    // ── 1. Flash 訊息：5 秒後自動關閉 ──
+    setTimeout(function () {
+        document.querySelectorAll('.flash-msg').forEach(function (el) {
+            try {
+                bootstrap.Alert.getOrCreateInstance(el).close();
+            } catch (e) {
+                el.remove();
+            }
+        });
+    }, 5000);
+
+    // ── 2. 側邊欄：標記目前頁面的連結為 active ──
+    var currentPath = window.location.pathname;
+    document.querySelectorAll('.sidebar .nav-link').forEach(function (link) {
+        if (link.getAttribute('href') === currentPath) {
+            link.classList.add('active');
+            // 若在子選單內，展開父層 collapse
+            var parent = link.closest('.collapse');
+            if (parent) {
+                parent.classList.add('show');
+            }
+        }
+    });
+
+});
+</script>
+
+</body>
+</html>

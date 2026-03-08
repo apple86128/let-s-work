@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}選擇 BOM 來源 - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-plus-circle me-2 text-primary"></i>新增 BOM — 選擇來源
+{% endblock %}
+
+{% block sub_menu %}
+<a href="{{ url_for('bom.index') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回列表
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+
+        <p class="text-muted mb-4">請選擇此 BOM 的建立來源：</p>
+
+        <div class="row g-4">
+
+            <!-- 來自 Booking -->
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white border-bottom">
+                        <h6 class="mb-0">
+                            <i class="fas fa-shield-alt me-2 text-success"></i>
+                            來自 Booking（受保護）
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-3">
+                            基於已批准的客戶 Booking 建立 BOM。
+                            此 BOM 受到專案策略保護，客戶資料自動帶入。
+                        </p>
+                        {% if available_bookings %}
+                        <div class="list-group list-group-flush">
+                            {% for booking in available_bookings %}
+                            <a href="{{ url_for('bom.create', source='from_booking', booking_id=booking.id) }}"
+                               class="list-group-item list-group-item-action rounded mb-1">
+                                <div class="fw-semibold">{{ booking.company_name }}</div>
+                                <small class="text-muted">
+                                    {{ booking.contact_person or '' }}
+                                    {% if booking.expected_start_date %}
+                                    · 預計 {{ booking.expected_start_date.strftime('%Y-%m') }}
+                                    {% endif %}
+                                </small>
+                            </a>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="text-center text-muted py-3">
+                            <i class="fas fa-calendar-check fa-2x mb-2 d-block opacity-25"></i>
+                            <small>目前沒有可用的已批准 Booking<br>請先建立並審核通過 Booking</small>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- 直接建立 -->
+            <div class="col-md-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white border-bottom">
+                        <h6 class="mb-0">
+                            <i class="fas fa-edit me-2 text-warning"></i>
+                            直接建立（不受保護）
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-4">
+                            不綁定 Booking，手動填入客戶資訊建立 BOM。
+                            此 BOM 不受專案策略保護。
+                        </p>
+                        <div class="d-grid">
+                            <a href="{{ url_for('bom.create', source='direct_create') }}"
+                               class="btn btn-warning">
+                                <i class="fas fa-plus me-2"></i>直接建立新 BOM
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

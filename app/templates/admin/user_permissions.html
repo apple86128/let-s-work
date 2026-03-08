@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}權限設定 - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-shield-alt me-2 text-primary"></i>權限設定：{{ user.name }}
+{% endblock %}
+
+{% block sub_menu %}
+<a href="{{ url_for('admin.edit_user', user_id=user.id) }}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回編輯
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+    <!-- 左側：目前客製化權限 -->
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0">
+                    <i class="fas fa-list me-2"></i>客製化權限
+                    <span class="badge bg-secondary ms-1">{{ user.custom_permissions | length }}</span>
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                {% if user.custom_permissions %}
+                <ul class="list-group list-group-flush">
+                    {% for perm in user.custom_permissions %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center px-3">
+                        <div>
+                            <span class="badge bg-{{ 'success' if perm.is_granted else 'danger' }} me-2">
+                                {{ '授予' if perm.is_granted else '拒絕' }}
+                            </span>
+                            <span class="small fw-semibold">{{ perm.permission_name }}</span>
+                            {% if perm.notes %}
+                            <br><small class="text-muted ms-4">{{ perm.notes }}</small>
+                            {% endif %}
+                        </div>
+                        <form method="POST"
+                              action="{{ url_for('admin.delete_user_permission', user_id=user.id, perm_id=perm.id) }}"
+                              onsubmit="return confirm('確定移除此客製化權限？')">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="移除">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </form>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-shield-alt fa-2x mb-2 d-block opacity-25"></i>
+                    <small>尚無客製化權限<br>使用角色預設權限</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 角色預設權限說明 -->
+        <div class="card border-0 shadow-sm mt-3">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-user-tag me-2"></i>目前角色</h6>
+            </div>
+            <div class="card-body py-2">
+                {% for role in user.roles %}
+                <span class="badge bg-secondary me-1">{{ role.display_name }}</span>
+                {% else %}
+                <span class="text-muted small">無角色</span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- 右側：新增客製化權限 -->
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-plus-circle me-2"></i>新增 / 修改客製化權限</h6>
+            </div>
+            <div class="card-body p-4">
+                <form method="POST"
+                      action="{{ url_for('admin.set_user_permission', user_id=user.id) }}"
+                      novalidate>
+
+                    <!-- 權限選擇（依分類分組） -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">選擇權限項目</label>
+                        <select class="form-select" name="permission_name" required>
+                            <option value="">-- 請選擇 --</option>
+                            {% for category, perms in permission_map.items() %}
+                            <optgroup label="{{ category }}">
+                                {% for perm_key in perms %}
+                                <option value="{{ perm_key }}">{{ perm_key }}</option>
+                                {% endfor %}
+                            </optgroup>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- 授予 / 拒絕 -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">授權動作</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio"
+                                       name="is_granted" value="true" id="grant_true" checked>
+                                <label class="form-check-label text-success fw-semibold" for="grant_true">
+                                    <i class="fas fa-check-circle me-1"></i>強制授予
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio"
+                                       name="is_granted" value="false" id="grant_false">
+                                <label class="form-check-label text-danger fw-semibold" for="grant_false">
+                                    <i class="fas fa-ban me-1"></i>強制拒絕
+                                </label>
+                            </div>
+                        </div>
+                        <small class="text-muted">
+                            強制授予：覆蓋角色權限，直接給予。強制拒絕：覆蓋角色權限，直接封鎖。
+                        </small>
+                    </div>
+
+                    <!-- 備註 -->
+                    <div class="mb-4">
+                        <label for="notes" class="form-label fw-semibold">備註（選填）</label>
+                        <input type="text" class="form-control" id="notes" name="notes"
+                               placeholder="說明授權原因...">
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>儲存權限設定
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

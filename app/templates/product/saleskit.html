@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Kit - {{ generated_at.strftime('%Y-%m-%d') }}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 13px;
+            color: #333;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+
+        .page-wrapper {
+            max-width: 960px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,.1);
+        }
+
+        /* Header */
+        .kit-header {
+            background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #1565c0 100%);
+            color: #fff;
+            padding: 32px 40px;
+        }
+        .kit-header h1 { font-size: 24px; font-weight: 700; letter-spacing: 1px; }
+        .kit-header .subtitle { font-size: 13px; opacity: .8; margin-top: 6px; }
+        .kit-header .meta {
+            margin-top: 16px;
+            display: flex;
+            gap: 24px;
+            font-size: 12px;
+            opacity: .9;
+        }
+        .kit-header .meta span {
+            background: rgba(255,255,255,.15);
+            border-radius: 20px;
+            padding: 4px 14px;
+        }
+
+        /* Module section */
+        .module-section { padding: 0 40px 32px; }
+        .module-section:first-of-type { padding-top: 32px; }
+
+        .module-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            background: linear-gradient(90deg, #e8eaf6, #f3f4fa);
+            border-left: 4px solid #3949ab;
+            border-radius: 0 6px 6px 0;
+            margin-bottom: 12px;
+        }
+        .module-code {
+            background: #3949ab;
+            color: #fff;
+            padding: 2px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+        .module-name { font-weight: 700; font-size: 14px; color: #1a237e; }
+
+        /* Table */
+        table { width: 100%; border-collapse: collapse; }
+        thead tr {
+            background: linear-gradient(90deg, #1565c0, #1976d2);
+            color: #fff;
+        }
+        thead th {
+            padding: 9px 12px;
+            font-weight: 600;
+            font-size: 12px;
+            letter-spacing: .5px;
+        }
+        tbody tr { border-bottom: 1px solid #e8eaf6; }
+        tbody tr:hover { background: #f5f7ff; }
+        tbody td { padding: 8px 12px; vertical-align: middle; }
+
+        .func-name { font-weight: 600; color: #1a237e; }
+        .func-unit { color: #555; }
+        .points-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #2e7d32, #43a047);
+            color: #fff;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        /* Footer */
+        .kit-footer {
+            background: #f5f7fa;
+            padding: 20px 40px;
+            border-top: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            color: #888;
+        }
+
+        /* Print controls */
+        .print-controls {
+            padding: 16px 40px;
+            background: #fff3e0;
+            border-top: 1px solid #ffe082;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .print-controls .note { font-size: 12px; color: #e65100; flex: 1; }
+        .btn-print {
+            background: #f57c00;
+            color: #fff;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .btn-print:hover { background: #e65100; }
+        .btn-back {
+            background: transparent;
+            color: #555;
+            border: 1px solid #ccc;
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        @media print {
+            body { background: #fff; padding: 0; }
+            .page-wrapper { box-shadow: none; border-radius: 0; }
+            .print-controls { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="page-wrapper">
+
+    <!-- 列印控制列 -->
+    <div class="print-controls">
+        <span class="note">
+            <strong>預覽模式</strong>：點擊「列印 / 儲存 PDF」輸出文件，此列僅供操作使用
+        </span>
+        <button class="btn-back" onclick="history.back()">← 返回</button>
+        <button class="btn-print" onclick="window.print()">🖨 列印 / 儲存 PDF</button>
+    </div>
+
+    <!-- 文件頭 -->
+    <div class="kit-header">
+        <h1>產品功能報價參考表</h1>
+        <div class="subtitle">Product Function Reference Sheet — For Sales Use Only</div>
+        <div class="meta">
+            <span>📅 生成日期：{{ generated_at.strftime('%Y-%m-%d') }}</span>
+            <span>📦 模組數：{{ total_modules }}</span>
+            <span>⚙️ 功能數：{{ total_functions }}</span>
+        </div>
+    </div>
+
+    <!-- 各模組功能表 -->
+    {% for item in modules_data %}
+    <div class="module-section">
+        <div class="module-title">
+            <span class="module-code">{{ item.module.code }}</span>
+            <span class="module-name">{{ item.module.name }}</span>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:40%">功能名稱</th>
+                    <th style="width:30%">說明</th>
+                    <th style="width:15%" class="text-center">計費單位</th>
+                    <th style="width:15%" class="text-center">單位點數</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for func in item.functions %}
+                <tr>
+                    <td class="func-name">{{ func.name }}</td>
+                    <td class="func-unit text-muted">{{ func.description or '' }}</td>
+                    <td style="text-align:center">{{ func.unit_name }}</td>
+                    <td style="text-align:center">
+                        <span class="points-badge">{{ func.points_per_unit }} pts</span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endfor %}
+
+    <!-- 文件底部 -->
+    <div class="kit-footer">
+        <span>本文件資料僅供業務參考使用，請勿對外公開實際報價金額</span>
+        <span>{{ generated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+    </div>
+
+</div>
+
+</body>
+</html>
