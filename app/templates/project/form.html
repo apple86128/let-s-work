@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}{{ '編輯' if project else '新增' }}專案 - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-project-diagram me-2 text-primary"></i>
+{{ '編輯專案：' + project.name if project else '新增專案' }}
+{% endblock %}
+
+{% block sub_menu %}
+{% if project %}
+<a href="{{ url_for('project.detail', project_id=project.id) }}"
+   class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回詳情
+</a>
+{% else %}
+<a href="{{ url_for('project.index') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="fas fa-arrow-left me-1"></i>返回列表
+</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <form method="POST"
+                      action="{{ url_for('project.edit', project_id=project.id) if project else url_for('project.create') }}"
+                      novalidate>
+
+                    <!-- 來源選擇（僅新增時顯示） -->
+                    {% if not project %}
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold">專案來源</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio"
+                                       name="source_type" value="direct"
+                                       id="source_direct" checked
+                                       onchange="toggleBomSelect(this.value)">
+                                <label class="form-check-label" for="source_direct">
+                                    獨立建立
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio"
+                                       name="source_type" value="from_bom"
+                                       id="source_bom"
+                                       onchange="toggleBomSelect(this.value)">
+                                <label class="form-check-label" for="source_bom">
+                                    從 BOM 轉換
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BOM 選擇（從 BOM 建立才顯示） -->
+                    <div class="mb-4" id="bom-select-section" style="display:none">
+                        <label for="bom_id" class="form-label fw-semibold">選擇來源 BOM</label>
+                        <select class="form-select" name="bom_id" id="bom_id"
+                                onchange="prefillFromBom(this)">
+                            <option value="">-- 請選擇已批准的 BOM --</option>
+                            {% for bom in approved_boms %}
+                            <option value="{{ bom.id }}"
+                                    data-customer="{{ bom.customer_company }}"
+                                    data-project="{{ bom.project_name }}">
+                                {{ bom.bom_number }} — {{ bom.customer_company }} / {{ bom.project_name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% if not approved_boms %}
+                        <div class="form-text text-warning">
+                            目前沒有可用的已批准 BOM（已批准且尚未建立專案）
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    <!-- 基本資料 -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-8">
+                            <div class="form-floating">
+                                <input type="text" class="form-control" id="name" name="name"
+                                       value="{{ project.name if project else '' }}"
+                                       placeholder="name" required>
+                                <label for="name">專案名稱 <span class="text-danger">*</span></label>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-floating">
+                                <input type="text" class="form-control" id="customer" name="customer"
+                                       value="{{ project.customer if project else '' }}"
+                                       placeholder="customer" required>
+                                <label for="customer">客戶名稱 <span class="text-danger">*</span></label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 日期 -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label for="start_date" class="form-label fw-semibold">起始日期</label>
+                            <input type="date" class="form-control" id="start_date" name="start_date"
+                                   value="{{ project.start_date.strftime('%Y-%m-%d') if project and project.start_date else '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="expected_end" class="form-label fw-semibold">預計結束日期</label>
+                            <input type="date" class="form-control" id="expected_end" name="expected_end"
+                                   value="{{ project.expected_end.strftime('%Y-%m-%d') if project and project.expected_end else '' }}">
+                        </div>
+                        {% if project %}
+                        <div class="col-md-4">
+                            <label for="actual_end" class="form-label fw-semibold">實際結束日期</label>
+                            <input type="date" class="form-control" id="actual_end" name="actual_end"
+                                   value="{{ project.actual_end.strftime('%Y-%m-%d') if project and project.actual_end else '' }}">
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- 專案管理員 -->
+                    <div class="mb-3">
+                        <label for="project_manager_id" class="form-label fw-semibold">專案管理員</label>
+                        <select class="form-select" id="project_manager_id" name="project_manager_id">
+                            <option value="">-- 請選擇 --</option>
+                            {% for pm in project_managers %}
+                            <option value="{{ pm.id }}"
+                                {{ 'selected' if project and project.project_manager_id == pm.id }}>
+                                {{ pm.name }}
+                                {% if pm.extension %}（{{ pm.extension }}）{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- 工程師成員（多選） -->
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">工程師成員</label>
+                        {% if engineers %}
+                        <div class="border rounded p-3" style="max-height:200px; overflow-y:auto">
+                            {% set current_member_ids = project.members | map(attribute='user_id') | list if project else [] %}
+                            {% for eng in engineers %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox"
+                                       name="member_ids" value="{{ eng.id }}"
+                                       id="eng_{{ eng.id }}"
+                                       {{ 'checked' if eng.id in current_member_ids }}>
+                                <label class="form-check-label" for="eng_{{ eng.id }}">
+                                    {{ eng.name }}
+                                    {% if eng.extension %}
+                                    <small class="text-muted">（{{ eng.extension }}）</small>
+                                    {% endif %}
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="text-muted small">目前沒有可指派的工程師</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- 專案說明 -->
+                    <div class="mb-4">
+                        <label for="description" class="form-label fw-semibold">專案說明 / 備註</label>
+                        <textarea class="form-control" id="description" name="description"
+                                  rows="4" placeholder="輸入專案說明或備註...">{{ project.description if project and project.description else '' }}</textarea>
+                    </div>
+
+                    <!-- 送出按鈕 -->
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i>
+                            {{ '儲存變更' if project else '建立專案' }}
+                        </button>
+                        {% if project %}
+                        <a href="{{ url_for('project.detail', project_id=project.id) }}"
+                           class="btn btn-outline-secondary">取消</a>
+                        {% else %}
+                        <a href="{{ url_for('project.index') }}"
+                           class="btn btn-outline-secondary">取消</a>
+                        {% endif %}
+                    </div>
+
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleBomSelect(value) {
+    const section = document.getElementById('bom-select-section');
+    if (section) {
+        section.style.display = value === 'from_bom' ? 'block' : 'none';
+    }
+}
+
+function prefillFromBom(select) {
+    const opt = select.options[select.selectedIndex];
+    if (!opt.value) return;
+    const nameField     = document.getElementById('name');
+    const customerField = document.getElementById('customer');
+    // 若欄位為空才自動填入，避免覆蓋使用者已輸入的值
+    if (nameField && !nameField.value) {
+        nameField.value = opt.dataset.project || '';
+    }
+    if (customerField && !customerField.value) {
+        customerField.value = opt.dataset.customer || '';
+    }
+}
+</script>
+{% endblock %}

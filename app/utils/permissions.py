@@ -45,19 +45,22 @@ PERMISSION_MAP = {
     'pricing_analysis':     ['admin', 'pm'],
 
     # --- 產品管理 ---
-    'product_module_manage':['admin', 'pm'],
+    'product_module_manage':  ['admin', 'pm'],
     'product_function_manage':['admin', 'pm'],
-    'product_pricing_manage':['admin', 'pm'],
+    'product_pricing_manage': ['admin', 'pm'],
 
-    # --- 專案管理 ---
-    'project_create':       ['admin', 'pm'],
-    'project_edit':         ['admin', 'project_manager'],
-    'project_delete':       ['admin'],
-    'project_assign_members':['project_manager'],
-    'project_manage':       ['project_manager'],
-    'project_view_own':     ['engineer', 'sales'],
-    'project_view_all':     ['admin', 'pm', 'project_manager'],
-    'project_close':        ['admin', 'project_manager'],
+    # --- 專案管理（專案追蹤模組） ---
+    'project_create':         ['admin', 'pm'],
+    'project_edit':           ['admin', 'pm', 'project_manager'],
+    'project_delete':         ['admin', 'pm'],
+    'project_view_own':       ['project_manager', 'engineer'],
+    'project_view_all':       ['admin', 'pm', 'project_manager', 'engineer'],
+    'project_manage':         ['project_manager'],
+    'project_assign_members': ['admin', 'pm', 'project_manager'],
+    'project_close':          ['admin', 'pm', 'project_manager'],
+    'project_update_status':  ['admin', 'pm', 'project_manager', 'engineer'],
+    'project_milestone_manage':['admin', 'pm', 'project_manager'],
+    'project_attachment_upload':['admin', 'pm', 'project_manager', 'engineer'],
 
     # --- 工單系統 ---
     'workorder_create':     ['engineer'],
@@ -215,9 +218,9 @@ def get_user_menu_items(user):
     回傳格式：
     [
         {
-            'name': '選單名稱',
-            'url':  'blueprint.route_name',
-            'icon': 'fas fa-icon',
+            'name':    '選單名稱',
+            'url':     'blueprint.route_name',
+            'icon':    'fas fa-icon',
             'submenu': [{'name': ..., 'url': ...}, ...]  # 選填
         },
         ...
@@ -236,11 +239,7 @@ def get_user_menu_items(user):
     })
 
     # 業務管理 - admin / pm / sales
-    if any([
-        user.has_role('admin'),
-        user.has_role('pm'),
-        user.has_role('sales'),
-    ]):
+    if any([user.has_role('admin'), user.has_role('pm'), user.has_role('sales')]):
         menu.append({
             'name': '業務管理',
             'url':  'booking.index',
@@ -248,6 +247,22 @@ def get_user_menu_items(user):
             'submenu': [
                 {'name': '商機管理', 'url': 'booking.index'},
                 {'name': 'BOM 列表', 'url': 'bom.index'},
+            ]
+        })
+
+    # 專案追蹤 - admin / pm / project_manager / engineer
+    if any([
+        user.has_role('admin'),
+        user.has_role('pm'),
+        user.has_role('project_manager'),
+        user.has_role('engineer'),
+    ]):
+        menu.append({
+            'name': '專案追蹤',
+            'url':  'project.index',
+            'icon': 'fas fa-project-diagram',
+            'submenu': [
+                {'name': '專案列表', 'url': 'project.index'},
             ]
         })
 

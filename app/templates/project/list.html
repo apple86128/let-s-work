@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block title %}專案追蹤 - {{ config.SYSTEM_NAME }}{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-project-diagram me-2 text-primary"></i>專案追蹤
+{% endblock %}
+
+{% block sub_menu %}
+<div class="d-flex gap-2">
+    {% if has_permission(current_user, 'project_create') %}
+    <a href="{{ url_for('project.create') }}" class="btn btn-success btn-sm">
+        <i class="fas fa-plus me-1"></i>新增專案
+    </a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+
+<!-- 狀態統計卡片 -->
+<div class="row g-3 mb-4">
+    {% for status_key, label_color in status_display.items() %}
+    <div class="col-6 col-md-4 col-lg-2">
+        <a href="{{ url_for('project.index', status=status_key) }}"
+           class="text-decoration-none">
+            <div class="card border-0 shadow-sm text-center py-3
+                        {{ 'border-bottom border-3 border-' + label_color[1] if status_filter == status_key }}">
+                <div class="fs-3 fw-bold text-{{ label_color[1] }}">
+                    {{ stats.get(status_key, 0) }}
+                </div>
+                <div class="text-muted small">{{ label_color[0] }}</div>
+            </div>
+        </a>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- 搜尋與篩選列 -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="GET" action="{{ url_for('project.index') }}"
+              class="d-flex gap-2 flex-wrap align-items-center">
+            <input type="text" name="search" class="form-control form-control-sm"
+                   style="max-width:240px"
+                   placeholder="搜尋專案名稱、客戶..."
+                   value="{{ search_query }}">
+            <select name="status" class="form-select form-select-sm" style="max-width:140px">
+                <option value="">全部狀態</option>
+                {% for status_key, label_color in status_display.items() %}
+                <option value="{{ status_key }}"
+                    {{ 'selected' if status_filter == status_key }}>
+                    {{ label_color[0] }}
+                </option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-search me-1"></i>搜尋
+            </button>
+            {% if status_filter or search_query %}
+            <a href="{{ url_for('project.index') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-times me-1"></i>清除
+            </a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<!-- 專案列表 -->
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        {% if projects.items %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>專案名稱</th>
+                        <th>客戶</th>
+                        <th>狀態</th>
+                        <th>負責 PM</th>
+                        <th>起始日期</th>
+                        <th>預計結束</th>
+                        <th>里程碑</th>
+                        <th class="text-end">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for project in projects.items %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for('project.detail', project_id=project.id) }}"
+                               class="fw-semibold text-decoration-none">
+                                {{ project.name }}
+                            </a>
+                            {% if project.source_type == 'from_bom' %}
+                            <i class="fas fa-link text-muted ms-1 small"
+                               title="來自 BOM：{{ project.source_bom.bom_number if project.source_bom else '' }}"></i>
+                            {% endif %}
+                        </td>
+                        <td class="text-muted small">{{ project.customer }}</td>
+                        <td>
+                            <span class="badge bg-{{ project.status_color }}">
+                                {{ project.status_display }}
+                            </span>
+                        </td>
+                        <td class="small">
+                            {{ project.project_manager.name if project.project_manager else '-' }}
+                        </td>
+                        <td class="small text-muted">
+                            {{ project.start_date.strftime('%Y-%m-%d') if project.start_date else '-' }}
+                        </td>
+                        <td class="small text-muted">
+                            {% if project.expected_end %}
+                                {% set today = namespace(d=none) %}
+                                <span class="{{ 'text-danger fw-semibold' if project.expected_end < now.date() and project.status not in ('ended', 'lost') else '' }}">
+                                    {{ project.expected_end.strftime('%Y-%m-%d') }}
+                                </span>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% set total = project.milestones | length %}
+                            {% set done  = project.milestones | selectattr('status', 'eq', 'completed') | list | length %}
+                            {% if total > 0 %}
+                            <div class="d-flex align-items-center gap-1">
+                                <div class="progress flex-grow-1" style="height:6px;min-width:60px">
+                                    <div class="progress-bar bg-success"
+                                         style="width:{{ (done / total * 100) | int }}%"></div>
+                                </div>
+                                <small class="text-muted">{{ done }}/{{ total }}</small>
+                            </div>
+                            {% else %}
+                            <small class="text-muted">-</small>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a href="{{ url_for('project.detail', project_id=project.id) }}"
+                               class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-eye me-1"></i>詳情
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 分頁 -->
+        {% if projects.pages > 1 %}
+        <div class="d-flex justify-content-center py-3">
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if projects.has_prev %}
+                    <li class="page-item">
+                        <a class="page-link"
+                           href="{{ url_for('project.index', page=projects.prev_num, status=status_filter, search=search_query) }}">
+                            &laquo;
+                        </a>
+                    </li>
+                    {% endif %}
+                    {% for p in projects.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                        {% if p %}
+                        <li class="page-item {{ 'active' if p == projects.page }}">
+                            <a class="page-link"
+                               href="{{ url_for('project.index', page=p, status=status_filter, search=search_query) }}">
+                                {{ p }}
+                            </a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">…</span></li>
+                        {% endif %}
+                    {% endfor %}
+                    {% if projects.has_next %}
+                    <li class="page-item">
+                        <a class="page-link"
+                           href="{{ url_for('project.index', page=projects.next_num, status=status_filter, search=search_query) }}">
+                            &raquo;
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div class="text-center text-muted py-5">
+            <i class="fas fa-project-diagram fa-3x mb-3 d-block opacity-25"></i>
+            {% if search_query or status_filter %}
+            <p>找不到符合條件的專案</p>
+            <a href="{{ url_for('project.index') }}" class="btn btn-outline-secondary btn-sm">清除篩選</a>
+            {% else %}
+            <p>目前尚無專案</p>
+            {% if has_permission(current_user, 'project_create') %}
+            <a href="{{ url_for('project.create') }}" class="btn btn-success btn-sm">
+                <i class="fas fa-plus me-1"></i>建立第一個專案
+            </a>
+            {% endif %}
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 注入伺服器時間供前端比較日期
+const now = new Date();
+</script>
+{% endblock %}

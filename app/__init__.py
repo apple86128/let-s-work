@@ -1,4 +1,4 @@
-﻿from flask import Flask, redirect, url_for
+from flask import Flask, redirect, url_for
 from flask_login import LoginManager, current_user
 from config import config_map
 
@@ -20,7 +20,7 @@ def _init_extensions(app):
     login_manager = LoginManager()
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"
-    login_manager.login_message = "隢??餃蝟餌絞"
+    login_manager.login_message = "請先登入"
     login_manager.login_message_category = "warning"
 
     @login_manager.user_loader
@@ -55,12 +55,14 @@ def _register_blueprints(app):
     from app.blueprints.booking   import booking_bp
     from app.blueprints.product   import product_bp
     from app.blueprints.bom       import bom_bp
+    from app.blueprints.project   import project_bp   # ← 新增
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(booking_bp)
     app.register_blueprint(product_bp)
     app.register_blueprint(bom_bp)
+    app.register_blueprint(project_bp)                # ← 新增
 
 
 def _init_database(app):
