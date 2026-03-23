@@ -273,8 +273,8 @@ def sample_bom(db, sales_user, sample_function, sample_pricing_tier):
         source_type       = 'direct_create',
         created_by_id     = sales_user.id,
         assigned_sales_id = sales_user.id,
-        status            = 'pending',
     )
+    # status 預設為 'pending'（由 Column default 決定，不需傳入 __init__）
     _db.session.add(bom)
     _db.session.flush()
 

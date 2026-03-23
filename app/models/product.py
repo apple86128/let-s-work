@@ -46,6 +46,10 @@ class Module(db.Model):
         }
         return price_map.get(plan_type, 0)
 
+    def get_current_price(self, plan_type):
+        """get_price 的別名，供 BOM 計算使用"""
+        return self.get_price(plan_type)
+
     def __repr__(self):
         return f'<Module {self.code} - {self.name}>'
 
@@ -117,14 +121,21 @@ class PricingTier(db.Model):
     created_by = db.relationship('User', backref='created_pricing_tiers')
 
     def __init__(self, plan_type, tier_name, min_points, price_per_point,
-                 max_points=None, is_default=False, effective_date=None, created_by_id=None):
+                 max_points=None, is_default=False, is_active=True,
+                 effective_date=None, end_date=None, created_by_id=None):
+        # ----------------------------------------------------------------
+        # 修正：補上 is_active 與 end_date 參數
+        # 原本 __init__ 缺少這兩個欄位，導致 routes.py 傳入時發生 TypeError
+        # ----------------------------------------------------------------
         self.plan_type       = plan_type
         self.tier_name       = tier_name
         self.min_points      = min_points
         self.max_points      = max_points
         self.price_per_point = price_per_point
         self.is_default      = is_default
+        self.is_active       = is_active
         self.effective_date  = effective_date or date.today()
+        self.end_date        = end_date
         self.created_by_id   = created_by_id
 
     def is_valid_for_points(self, points):
@@ -136,7 +147,7 @@ class PricingTier(db.Model):
         return True
 
     def calculate_total_price(self, points):
-        """計算指定點數的總價格"""
+        """計算指定點數的總價格（整段計費）"""
         if not self.is_valid_for_points(points):
             return 0
         return points * self.price_per_point
@@ -200,7 +211,7 @@ def calculate_quote_summary(selected_functions):
         return {'modules': [], 'total_points': 0, 'pricing': {}}
 
     # 批次查詢所有相關功能
-    function_ids = [item['function_id'] for item in selected_functions]
+    function_ids  = [item['function_id'] for item in selected_functions]
     function_dict = {
         f.id: f for f in Function.query.filter(Function.id.in_(function_ids)).all()
     }
@@ -220,69 +231,76 @@ def calculate_quote_summary(selected_functions):
 
         if func.module_id not in module_usage:
             module_usage[func.module_id] = {
-                'module':        func.module,
-                'functions':     [],
-                'total_points':  0,
+                'module':    func.module,
+                'functions': [],
+                'subtotal_points': 0,
             }
-
         module_usage[func.module_id]['functions'].append({
             'function': func,
             'quantity': quantity,
             'points':   points,
         })
-        module_usage[func.module_id]['total_points'] += points
+        module_usage[func.module_id]['subtotal_points'] += points
 
-    # 計算各方案報價
     modules_list = list(module_usage.values())
 
-    def build_plan(plan_type):
-        tier         = PricingTier.get_effective_tier(plan_type, total_points)
+    # 計算兩種方案的價格資訊
+    pricing = {}
+    for plan_type in ('onetime', 'yearly'):
+        tier = PricingTier.get_effective_tier(plan_type, total_points)
+        modules_cost = sum(
+            m['module'].get_price(plan_type) for m in modules_list
+        )
         points_cost  = tier.calculate_total_price(total_points) if tier else 0
-        modules_cost = sum(m['module'].get_price(plan_type) for m in modules_list)
-        return {
-            'tier':         tier,
-            'points_cost':  points_cost,
-            'modules_cost': modules_cost,
-            'total_cost':   points_cost + modules_cost,
+        pricing[plan_type] = {
+            'tier':          tier,
+            'modules_cost':  modules_cost,
+            'points_cost':   points_cost,
+            'total':         modules_cost + points_cost,
         }
 
     return {
         'modules':      modules_list,
         'total_points': total_points,
-        'pricing': {
-            'onetime': build_plan('onetime'),
-            'yearly':  build_plan('yearly'),
-        }
+        'pricing':      pricing,
     }
 
 
 # ---------------------------------------------------------------------------
-# 資料庫初始化輔助函數
+# Seed 資料：預設模組、功能、價格級距
 # ---------------------------------------------------------------------------
 
-def create_default_modules_and_functions():
-    """建立預設模組與功能資料（若已存在則略過）"""
+def create_default_modules():
+    """建立預設產品模組與功能（若已存在則略過）"""
 
     if Module.query.count() > 0:
         return
 
     modules_data = [
         {
-            'name': '標準監控模組', 'code': 'NCA-B',
-            'description': '提供 SNMP、ICMP、HTTP/S 等基礎網路設備監控功能',
+            'name': '基礎監控模組', 'code': 'NCA-B',
+            'description': '提供網路設備基礎監控功能',
             'functions': [
-                {'name': 'SNMP 標準網路設備', 'code': 'SNMP_STANDARD', 'points': 10, 'unit': '台'},
-                {'name': 'ICMP',              'code': 'ICMP',           'points': 1,  'unit': '台'},
-                {'name': 'HTTP/S',            'code': 'HTTPS',          'points': 1,  'unit': '台'},
+                {'name': '設備可用性監控', 'code': 'AVAIL_MONITOR',  'points': 5,  'unit': '台'},
+                {'name': '流量監控',       'code': 'TRAFFIC_MONITOR','points': 10, 'unit': '台'},
+                {'name': '事件告警',       'code': 'EVENT_ALERT',    'points': 3,  'unit': '台'},
             ]
         },
         {
-            'name': '虛擬化監控模組', 'code': 'NCA-VT',
-            'description': '提供 VMware、Nutanix 等虛擬化平台監控功能',
+            'name': '進階分析模組', 'code': 'NCA-A',
+            'description': '提供網路流量與效能深度分析功能',
             'functions': [
-                {'name': 'VMware 主機監控',  'code': 'VMWARE_HOST',  'points': 10, 'unit': '台'},
-                {'name': 'Nutanix 主機監控', 'code': 'NUTANIX_HOST', 'points': 10, 'unit': '台'},
-                {'name': '虛擬機監控',       'code': 'VM_MONITOR',   'points': 5,  'unit': '台'},
+                {'name': '流量趨勢分析',   'code': 'TRAFFIC_TREND',  'points': 15, 'unit': '台'},
+                {'name': '效能基準比對',   'code': 'PERF_BASELINE',  'points': 10, 'unit': '台'},
+            ]
+        },
+        {
+            'name': '虛擬化監控模組', 'code': 'NCA-V',
+            'description': '提供 VMware / Nutanix 虛擬化環境監控功能',
+            'functions': [
+                {'name': 'VMware vCenter 監控', 'code': 'VMWARE_VC',    'points': 20, 'unit': '台'},
+                {'name': 'Nutanix 主機監控',    'code': 'NUTANIX_HOST', 'points': 10, 'unit': '台'},
+                {'name': '虛擬機監控',          'code': 'VM_MONITOR',   'points': 5,  'unit': '台'},
             ]
         },
         {
@@ -331,10 +349,16 @@ def create_default_pricing_tiers():
         return
 
     tiers_data = [
-        {'plan_type': 'onetime', 'tier_name': '基礎方案（買斷）',
-         'min_points': 0, 'max_points': 5000, 'price_per_point': 500, 'is_default': True},
-        {'plan_type': 'yearly',  'tier_name': '基礎方案（訂閱）',
-         'min_points': 0, 'max_points': 5000, 'price_per_point': 200, 'is_default': True},
+        {
+            'plan_type': 'onetime', 'tier_name': '基礎方案（買斷）',
+            'min_points': 0, 'max_points': 5000,
+            'price_per_point': 500, 'is_default': True,
+        },
+        {
+            'plan_type': 'yearly', 'tier_name': '基礎方案（訂閱）',
+            'min_points': 0, 'max_points': 5000,
+            'price_per_point': 200, 'is_default': True,
+        },
     ]
 
     for data in tiers_data:
