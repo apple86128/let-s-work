@@ -61,8 +61,7 @@ def _calculate_bom_pricing(bom):
     tier        = PricingTier.get_effective_tier(bom.plan_type, bom.total_points)
     points_cost = tier.calculate_total_price(bom.total_points) if tier else bom.total_points * 1000
     base_price  = modules_cost + points_cost
-
-    suggested = base_price * bom.plan_years if bom.plan_type == 'yearly' else base_price
+    suggested   = base_price * bom.plan_years if bom.plan_type == 'yearly' else base_price
 
     return {
         'modules_cost':    modules_cost,
@@ -121,7 +120,6 @@ def index():
 @permission_required('bom_create')
 def source_select():
     """BOM 來源選擇頁面"""
-    # 取得已批准且未被轉換的 Booking
     used_ids = [
         b.booking_id for b in
         BOM.query.filter(BOM.booking_id.isnot(None), BOM.is_deleted == False).all()
@@ -137,7 +135,7 @@ def source_select():
     ):
         available_query = available_query.filter(
             db.or_(
-                CustomerBooking.created_by_id   == current_user.id,
+                CustomerBooking.created_by_id     == current_user.id,
                 CustomerBooking.assigned_sales_id == current_user.id,
             )
         )
@@ -201,11 +199,11 @@ def create():
 
     # 驗證
     errors = []
-    if not company:         errors.append('請輸入客戶公司名稱')
-    if not project_name:    errors.append('請輸入專案名稱')
+    if not company:      errors.append('請輸入客戶公司名稱')
+    if not project_name: errors.append('請輸入專案名稱')
     if plan_type not in ('onetime', 'yearly'): errors.append('請選擇有效的方案類型')
     if not plan_years or not (1 <= plan_years <= 7): errors.append('請選擇 1-7 年的方案年數')
-    if not function_ids:    errors.append('請至少選擇一個功能項目')
+    if not function_ids: errors.append('請至少選擇一個功能項目')
 
     for i, qty_str in enumerate(quantities):
         try:
@@ -278,10 +276,15 @@ def detail(bom_id):
     bom_items_by_module = _group_items_by_module(bom)
     bom_items_list      = list(bom.items)
 
+    # admin / pm 才需要業務指派下拉選單
+    can_assign  = current_user.has_role('admin') or current_user.has_role('pm')
+    sales_users = _get_sales_users() if can_assign else []
+
     return render_template('bom/detail.html',
                            bom=bom,
                            bom_items_by_module=bom_items_by_module,
-                           bom_items_list=bom_items_list)
+                           bom_items_list=bom_items_list,
+                           sales_users=sales_users)          # ← 補上此行
 
 
 # ---------------------------------------------------------------------------
@@ -392,53 +395,57 @@ def review(bom_id):
         flash('您沒有權限審核此 BOM', 'danger')
         return redirect(url_for('bom.detail', bom_id=bom_id))
 
-    if request.method == 'GET':
+    # 預先準備 template 所需變數（GET 與 POST 驗證失敗都會用到）
+    bom_items_by_module = _group_items_by_module(bom)
+    bom_items_list      = list(bom.items)
+
+    def _render_review():
         return render_template('bom/review.html',
                                bom=bom,
-                               bom_items_by_module=_group_items_by_module(bom))
+                               bom_items_by_module=bom_items_by_module,
+                               bom_items_list=bom_items_list)
 
-    # POST：處理審核動作
-    action = request.form.get('action')
-    notes  = request.form.get('notes', '').strip()
+    if request.method == 'GET':
+        return _render_review()
+
+    action      = request.form.get('action')
+    notes       = request.form.get('notes', '').strip()
+    final_price = request.form.get('final_price', type=int)
+
+    final_maintenance_price = request.form.get('final_maintenance_price', type=int)
 
     if action == 'approve':
-        final_price = request.form.get('final_price', type=int)
         if not final_price or final_price <= 0:
-            flash('請輸入有效的產品最終價格', 'warning')
-            return redirect(url_for('bom.review', bom_id=bom_id))
-        final_maintenance = request.form.get('final_maintenance_price', type=int)
-        bom.approve(current_user.id, notes, final_price, final_maintenance)
-        flash(f'已批准 BOM：{bom.bom_number}', 'success')
+            flash('批准時請輸入有效的最終價格', 'warning')
+            return _render_review()
+        bom.approve(
+            current_user.id,
+            notes                   = notes or None,
+            final_price             = final_price,
+            final_maintenance_price = final_maintenance_price if final_maintenance_price and final_maintenance_price > 0 else None,
+        )
+        flash(f'BOM {bom.bom_number} 已批准', 'success')
 
     elif action == 'reject':
         if not notes:
-            flash('拒絕時必須填寫審核意見', 'warning')
-            return redirect(url_for('bom.review', bom_id=bom_id))
-        bom.reject(current_user.id, notes)
-        flash(f'已拒絕 BOM：{bom.bom_number}', 'info')
+            flash('拒絕時請填寫審核意見', 'warning')
+            return _render_review()
+        bom.reject(current_user.id, notes=notes)
+        flash(f'BOM {bom.bom_number} 已拒絕', 'warning')
 
     elif action == 'update_price':
-        final_price      = request.form.get('final_price', type=int)
-        discount_rate    = request.form.get('discount_rate', type=float)
-        final_maint      = request.form.get('final_maintenance_price', type=int)
-        maint_discount   = request.form.get('maintenance_discount_rate', type=float)
-        if discount_rate is not None:
-            discount_rate /= 100
-        if maint_discount is not None:
-            maint_discount /= 100
+        # 僅更新價格，不改變審核狀態
         bom.update_price_only(
-            current_user.id,
-            final_price=final_price,
-            discount_rate=discount_rate,
-            final_maintenance_price=final_maint,
-            maintenance_discount_rate=maint_discount,
-            notes=notes,
+            user_id                 = current_user.id,
+            final_price             = final_price if final_price and final_price > 0 else None,
+            final_maintenance_price = final_maintenance_price if final_maintenance_price and final_maintenance_price > 0 else None,
+            notes                   = notes or None,
         )
-        flash('價格資訊已更新', 'success')
+        flash(f'BOM {bom.bom_number} 價格已更新', 'success')
 
     else:
-        flash('無效的審核操作', 'warning')
-        return redirect(url_for('bom.review', bom_id=bom_id))
+        flash('無效的操作', 'danger')
+        return _render_review()
 
     db.session.commit()
     return redirect(url_for('bom.detail', bom_id=bom_id))
@@ -451,7 +458,7 @@ def review(bom_id):
 @bom_bp.route('/<int:bom_id>/delete', methods=['POST'])
 @login_required
 def delete(bom_id):
-    """軟刪除 BOM"""
+    """刪除 BOM"""
     bom = BOM.query.get_or_404(bom_id)
 
     if not bom.can_be_deleted_by(current_user):
@@ -571,7 +578,7 @@ def api_calculate_price():
         'modules_cost':    modules_cost,
         'points_cost':     points_cost,
         'suggested_price': int(suggested),
-        'tier_info':       {
+        'tier_info': {
             'name':            tier.tier_name,
             'price_per_point': tier.price_per_point,
         } if tier else None,

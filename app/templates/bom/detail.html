@@ -235,8 +235,14 @@
                       class="mt-2" onsubmit="return confirm('確定重新指派業務？')">
                     <div class="input-group input-group-sm">
                         <select class="form-select" name="new_sales_id">
-                            {% from 'macro.html' import sales_options ignore missing %}
                             <option value="">選擇業務...</option>
+                            {% for user in sales_users %}
+                            <option value="{{ user.id }}"
+                                {{ 'selected' if bom.assigned_sales_id == user.id }}>
+                                {{ user.name }}
+                                {% if user.extension %}（{{ user.extension }}）{% endif %}
+                            </option>
+                            {% endfor %}
                         </select>
                         <button type="submit" class="btn btn-outline-secondary">
                             <i class="fas fa-exchange-alt"></i>
