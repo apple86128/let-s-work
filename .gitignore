@@ -64,3 +64,7 @@ coverage.xml
 dist/
 build/
 *.egg-info/
+# ===========================
+# GIT環境
+# ===========================
+.gitconfig

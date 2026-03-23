@@ -42,7 +42,7 @@
                 <h6 class="mb-0"><i class="fas fa-building me-2"></i>客戶資訊</h6>
                 {% set sc = {'pending':'warning','approved':'success','rejected':'danger','expired':'secondary'} %}
                 <span class="badge bg-{{ sc.get(booking.status, 'secondary') }} fs-6">
-                    {{ booking.get_status_display() }}
+                    {{ booking.status_display }}
                 </span>
             </div>
             <div class="card-body">

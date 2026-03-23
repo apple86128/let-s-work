@@ -62,19 +62,19 @@ class CustomerBooking(db.Model):
                  contact_phone=None, contact_email=None, expected_start_date=None,
                  project_duration_months=None, assigned_sales_id=None):
 
-        self.company_name           = company_name
-        self.company_tax_id         = company_tax_id
-        self.contact_person         = contact_person
-        self.contact_phone          = contact_phone
-        self.contact_email          = contact_email
-        self.budget_min             = budget_min
-        self.budget_max             = budget_max
-        self.project_requirements   = project_requirements
-        self.expected_start_date    = expected_start_date
+        self.company_name            = company_name
+        self.company_tax_id          = company_tax_id
+        self.contact_person          = contact_person
+        self.contact_phone           = contact_phone
+        self.contact_email           = contact_email
+        self.budget_min              = budget_min
+        self.budget_max              = budget_max
+        self.project_requirements    = project_requirements
+        self.expected_start_date     = expected_start_date
         self.project_duration_months = project_duration_months
-        self.created_by_id          = created_by_id
-        self.assigned_sales_id      = assigned_sales_id or created_by_id  # 預設指派給建立者
-        self.valid_until            = datetime.utcnow() + timedelta(days=90)  # 預設 90 天有效期
+        self.created_by_id           = created_by_id
+        self.assigned_sales_id       = assigned_sales_id or created_by_id  # 預設指派給建立者
+        self.valid_until             = datetime.utcnow() + timedelta(days=90)  # 預設 90 天有效期
 
     # --- 狀態顯示 Property ---
 
@@ -120,35 +120,59 @@ class CustomerBooking(db.Model):
             and not self.is_deleted
         )
 
+    def get_status_display(self):
+        """供 template 呼叫的狀態顯示方法（對應 status_display property）"""
+        return self.status_display
     # --- 權限判斷 ---
 
+    def _is_related_sales(self, user):
+        """檢查 sales 是否為建立者或被指派者（內部共用判斷）"""
+        return (
+            self.created_by_id == user.id
+            or self.assigned_sales_id == user.id
+        )
+
+    
+    def can_be_viewed_by(self, user):
+        """
+        檢查指定使用者是否可查看此 Booking
+        - admin / pm：可查看全部
+        - sales：只能查看自己建立或被指派的
+        - 其他角色：不可查看
+        """
+        if not user or self.is_deleted:
+            return False
+        if user.has_role('admin') or user.has_role('pm'):
+            return True
+        return user.has_role('sales') and self._is_related_sales(user)
+
     def can_be_edited_by(self, user):
-        """檢查指定使用者是否可編輯此 Booking"""
+        """
+        檢查指定使用者是否可編輯此 Booking
+        - admin / pm：可編輯全部
+        - sales：只能編輯自己相關的，且限 pending 或 approved（指派者）狀態
+        """
         if not user or self.is_deleted:
             return False
 
         if user.has_role('admin') or user.has_role('pm'):
             return True
 
-        if not user.has_role('sales'):
+        if not user.has_role('sales') or not self._is_related_sales(user):
             return False
 
-        is_creator  = self.created_by_id     == user.id
-        is_assigned = self.assigned_sales_id == user.id
-
-        if not (is_creator or is_assigned):
-            return False
-
-        # pending 狀態皆可編輯；approved 狀態僅指派業務可編輯
         if self.status == 'pending':
             return True
-        if self.status == 'approved' and is_assigned:
+        if self.status == 'approved' and self.assigned_sales_id == user.id:
             return True
 
         return False
 
     def can_be_reviewed_by(self, user):
-        """檢查指定使用者是否可審核此 Booking"""
+        """
+        檢查指定使用者是否可審核此 Booking
+        - 僅 admin / pm，且狀態必須為 pending
+        """
         return (
             user is not None
             and (user.has_role('admin') or user.has_role('pm'))
@@ -159,25 +183,25 @@ class CustomerBooking(db.Model):
 
     def approve(self, user_id, notes=None):
         """批准 Booking"""
-        self.status        = 'approved'
+        self.status         = 'approved'
         self.reviewed_by_id = user_id
-        self.reviewed_at   = datetime.utcnow()
+        self.reviewed_at    = datetime.utcnow()
         if notes:
             self.review_notes = notes
 
     def reject(self, user_id, notes=None):
         """拒絕 Booking"""
-        self.status        = 'rejected'
+        self.status         = 'rejected'
         self.reviewed_by_id = user_id
-        self.reviewed_at   = datetime.utcnow()
+        self.reviewed_at    = datetime.utcnow()
         if notes:
             self.review_notes = notes
 
     def extend_validity(self, days, user_id):
         """延長有效期"""
-        self.valid_until   = self.valid_until + timedelta(days=days)
+        self.valid_until    = self.valid_until + timedelta(days=days)
         self.reviewed_by_id = user_id
-        self.reviewed_at   = datetime.utcnow()
+        self.reviewed_at    = datetime.utcnow()
 
     def soft_delete(self, user_id):
         """軟刪除"""
@@ -207,10 +231,10 @@ class BookingExtensionRequest(db.Model):
 
     # --- 審核狀態 ---
     # pending: 待審核 | approved: 已批准 | rejected: 已拒絕
-    status          = db.Column(db.String(20), default='pending', nullable=False)
-    reviewed_by_id  = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    reviewed_at     = db.Column(db.DateTime, nullable=True)
-    review_notes    = db.Column(db.Text, nullable=True)
+    status         = db.Column(db.String(20), default='pending', nullable=False)
+    reviewed_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    reviewed_at    = db.Column(db.DateTime, nullable=True)
+    review_notes   = db.Column(db.Text, nullable=True)
 
     # --- 關聯關係 ---
     requested_by = db.relationship('User', foreign_keys=[requested_by_id])
@@ -238,18 +262,18 @@ class BookingExtensionRequest(db.Model):
 
     def approve(self, user_id, notes=None):
         """批准展延申請，同步延長 Booking 有效期"""
-        self.status        = 'approved'
+        self.status         = 'approved'
         self.reviewed_by_id = user_id
-        self.reviewed_at   = datetime.utcnow()
+        self.reviewed_at    = datetime.utcnow()
         if notes:
             self.review_notes = notes
         self.booking.extend_validity(self.requested_days, user_id)
 
     def reject(self, user_id, notes=None):
         """拒絕展延申請"""
-        self.status        = 'rejected'
+        self.status         = 'rejected'
         self.reviewed_by_id = user_id
-        self.reviewed_at   = datetime.utcnow()
+        self.reviewed_at    = datetime.utcnow()
         if notes:
             self.review_notes = notes
 
@@ -292,8 +316,8 @@ def get_expiring_bookings(days=7):
     """取得即將在指定天數內過期的 Booking"""
     expiry_threshold = datetime.utcnow() + timedelta(days=days)
     return CustomerBooking.query.filter(
-        CustomerBooking.status     == 'approved',
-        CustomerBooking.is_deleted == False,
+        CustomerBooking.status      == 'approved',
+        CustomerBooking.is_deleted  == False,
         CustomerBooking.valid_until <= expiry_threshold,
         CustomerBooking.valid_until >  datetime.utcnow()
     ).all()
@@ -302,8 +326,8 @@ def get_expiring_bookings(days=7):
 def update_expired_bookings():
     """將已過期的 Booking 狀態更新為 expired，回傳更新筆數"""
     expired = CustomerBooking.query.filter(
-        CustomerBooking.status     == 'approved',
-        CustomerBooking.valid_until < datetime.utcnow()
+        CustomerBooking.status      == 'approved',
+        CustomerBooking.valid_until <  datetime.utcnow()
     ).all()
 
     for booking in expired:
