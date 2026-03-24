@@ -85,6 +85,9 @@ PERMISSION_MAP = {
     'data_import':          ['admin'],
     'system_settings':      ['admin'],
     'audit_logs':           ['admin'],
+    # --- KPI 績效統計 ---
+    'kpi_view':             ['admin', 'pm'],
+    'kpi_manage':           ['admin', 'pm'],
 }
 
 
@@ -240,6 +243,10 @@ def get_user_menu_items(user):
 
     # 業務管理 - admin / pm / sales
     if any([user.has_role('admin'), user.has_role('pm'), user.has_role('sales')]):
+        kpi_submenu = []
+        if user.has_role('admin') or user.has_role('pm'):
+            kpi_submenu = [{'name': '年度績效統計', 'url': 'kpi.dashboard'}]
+
         menu.append({
             'name': '業務管理',
             'url':  'booking.index',
@@ -247,6 +254,7 @@ def get_user_menu_items(user):
             'submenu': [
                 {'name': '商機管理', 'url': 'booking.index'},
                 {'name': 'BOM 列表', 'url': 'bom.index'},
+                *kpi_submenu,
             ]
         })
 
