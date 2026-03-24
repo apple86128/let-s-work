@@ -32,7 +32,7 @@
 
     <div class="row g-4">
 
-        <!-- 左欄：客戶資訊 + 方案選擇 + 業務指派 -->
+        <!-- 左欄：客戶資訊 + 方案選擇 + 業務指派 + 點數設定 + 價格預覽 -->
         <div class="col-lg-4">
 
             <!-- 客戶資訊 -->
@@ -157,6 +157,51 @@
             </div>
             {% endif %}
 
+            <!-- 點數設定 -->
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-header bg-white border-bottom">
+                    <h6 class="mb-0">
+                        <i class="fas fa-star me-2 text-warning"></i>點數設定
+                    </h6>
+                </div>
+                <div class="card-body p-3">
+                    <!-- 系統建議點數（唯讀顯示） -->
+                    <div class="d-flex justify-content-between align-items-center mb-2 py-2 px-3 rounded"
+                         style="background:var(--bs-light)">
+                        <span class="small text-muted">系統計算建議點數</span>
+                        <strong id="suggested-points-display">0 pts</strong>
+                    </div>
+
+                    <!-- 自訂點數輸入 -->
+                    <div class="border border-primary rounded p-3"
+                         style="background:rgba(13,110,253,.04)">
+                        <label class="form-label small fw-semibold text-primary mb-2">
+                            <i class="fas fa-edit me-1"></i>實際下單點數（可自由指定）
+                        </label>
+                        <div class="input-group input-group-sm">
+                            <input type="number"
+                                   class="form-control"
+                                   id="custom-points-input"
+                                   name="custom_points"
+                                   min="0"
+                                   placeholder="留空則沿用建議值"
+                                   value="{{ bom.custom_points if bom and bom.custom_points is not none else '' }}"
+                                   oninput="onCustomPointsChange()">
+                            <span class="input-group-text">pts</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mt-2">
+                            <small class="text-muted">留空時以建議值計算報價</small>
+                            <button type="button"
+                                    class="btn btn-outline-primary btn-sm"
+                                    id="btn-use-suggested"
+                                    onclick="applysuggested()">
+                                套用建議值
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 即時價格預覽 -->
             <div class="card border-0 shadow-sm border-primary">
                 <div class="card-header bg-white border-bottom">
@@ -166,7 +211,7 @@
                 </div>
                 <div class="card-body p-3 small">
                     <div class="d-flex justify-content-between mb-1">
-                        <span class="text-muted">總點數</span>
+                        <span class="text-muted">計價點數</span>
                         <strong id="preview-points">0 pts</strong>
                     </div>
                     <div class="d-flex justify-content-between mb-1">
@@ -288,6 +333,9 @@
 
 {% block extra_js %}
 <script>
+// 系統計算的建議點數（items 加總）
+var suggestedPointsValue = 0;
+
 function toggleRow(checkbox) {
     var row    = checkbox.closest('tr');
     var qty    = row.querySelector('.qty-input');
@@ -327,6 +375,25 @@ function getSelectedFunctions() {
     return items;
 }
 
+function getCustomPoints() {
+    // 取得自訂點數輸入值，空白或無效則回傳 null
+    var val = document.getElementById('custom-points-input').value.trim();
+    if (val === '' || isNaN(parseInt(val))) return null;
+    var n = parseInt(val);
+    return n >= 0 ? n : null;
+}
+
+function onCustomPointsChange() {
+    // 自訂點數欄位變更時立即觸發重新計算
+    updatePrice();
+}
+
+function applysuggested() {
+    // 套用建議值到自訂點數欄位
+    document.getElementById('custom-points-input').value = suggestedPointsValue;
+    updatePrice();
+}
+
 function updatePrice() {
     // 更新所有小計
     document.querySelectorAll('.func-row').forEach(function(row) {
@@ -337,28 +404,48 @@ function updatePrice() {
     var count = document.querySelectorAll('.func-check:checked').length;
     document.getElementById('item-count').textContent = count;
 
-    var items      = getSelectedFunctions();
-    var planType   = document.querySelector('input[name="plan_type"]:checked').value;
-    var planYears  = parseInt(document.getElementById('plan_years').value) || 1;
+    var items     = getSelectedFunctions();
+    var planType  = document.querySelector('input[name="plan_type"]:checked').value;
+    var planYears = parseInt(document.getElementById('plan_years').value) || 1;
+    var customPts = getCustomPoints();
 
     if (items.length === 0) {
-        document.getElementById('preview-points').textContent     = '0 pts';
-        document.getElementById('preview-modules').textContent    = '-';
+        suggestedPointsValue = 0;
+        document.getElementById('suggested-points-display').textContent = '0 pts';
+        document.getElementById('preview-points').textContent      = '0 pts';
+        document.getElementById('preview-modules').textContent     = '-';
         document.getElementById('preview-points-cost').textContent = '-';
-        document.getElementById('preview-total').textContent      = '-';
-        document.getElementById('preview-note').textContent       = '';
+        document.getElementById('preview-total').textContent       = '-';
+        document.getElementById('preview-note').textContent        = '';
         return;
     }
 
     fetch("{{ url_for('bom.api_calculate_price') }}", {
         method:  'POST',
         headers: {'Content-Type': 'application/json'},
-        body:    JSON.stringify({functions: items, plan_type: planType, plan_years: planYears})
+        body:    JSON.stringify({
+            functions:     items,
+            plan_type:     planType,
+            plan_years:    planYears,
+            custom_points: customPts   // null 表示沿用系統計算
+        })
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
+        // 更新建議點數顯示（items 加總）
+        suggestedPointsValue = d.suggested_points;
+        document.getElementById('suggested-points-display').textContent =
+            d.suggested_points.toLocaleString() + ' pts';
+
+        // 更新套用建議值按鈕文字
+        document.getElementById('btn-use-suggested').textContent =
+            '套用建議值 (' + d.suggested_points.toLocaleString() + ')';
+
+        // 更新計價點數（custom 或 suggested）
         document.getElementById('preview-points').textContent =
-            d.total_points.toLocaleString() + ' pts';
+            d.billing_points.toLocaleString() + ' pts'
+            + (customPts !== null ? ' ✎' : '');
+
         document.getElementById('preview-modules').textContent =
             d.modules_cost.toLocaleString();
         document.getElementById('preview-points-cost').textContent =
@@ -366,7 +453,8 @@ function updatePrice() {
         document.getElementById('preview-total').textContent =
             d.suggested_price.toLocaleString();
         document.getElementById('preview-note').textContent =
-            planType === 'yearly' ? '（含 ' + planYears + ' 年訂閱）' : '';
+            planType === 'yearly' ?
+            '（含 ' + planYears + ' 年訂閱）' : '';
     })
     .catch(function() {});
 }

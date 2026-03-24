@@ -21,7 +21,10 @@ class BOM(db.Model):
     plan_type  = db.Column(db.String(20),  nullable=False)
     plan_years = db.Column(db.Integer,     nullable=False)
 
+    # 系統自動計算的參考點數（由 items 加總）
     total_points      = db.Column(db.Integer, default=0, nullable=False)
+    # 使用者自訂的實際下單點數（None 表示未覆蓋，以 total_points 為準）
+    custom_points     = db.Column(db.Integer, nullable=True)
     base_modules_cost = db.Column(db.Integer, default=0, nullable=False)
     points_cost       = db.Column(db.Integer, default=0, nullable=False)
     suggested_price   = db.Column(db.Integer, default=0, nullable=False)
@@ -155,16 +158,30 @@ class BOM(db.Model):
                 self._is_related_sales(user) and
                 self.status == 'approved')
 
+    def get_effective_points(self):
+        """
+        取得實際計價用點數：
+        custom_points 不為 None 時使用自訂值，否則回傳 items 自動加總
+        """
+        if self.custom_points is not None:
+            return self.custom_points
+        return sum(item.total_points for item in self.items)
+
     def calculate_suggested_price(self):
+        # total_points 永遠儲存 items 加總（作為建議參考）
         self.total_points = sum(item.total_points for item in self.items)
+
+        # 計價點數：優先使用 custom_points，否則用 total_points
+        billing_points = self.get_effective_points()
+
         used_ids = {item.function.module_id for item in self.items if item.function}
         self.base_modules_cost = sum(
             m.get_current_price(self.plan_type)
             for m in Module.query.filter(Module.id.in_(used_ids)).all()
         )
         from app.models.product import PricingTier
-        tier             = PricingTier.get_effective_tier(self.plan_type, self.total_points)
-        self.points_cost = tier.calculate_total_price(self.total_points) if tier else 0
+        tier             = PricingTier.get_effective_tier(self.plan_type, billing_points)
+        self.points_cost = tier.calculate_total_price(billing_points) if tier else 0
         base             = self.base_modules_cost + self.points_cost
         self.suggested_price = int(base * self.plan_years if self.plan_type == 'yearly' else base)
         return self.suggested_price

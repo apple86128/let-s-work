@@ -46,7 +46,10 @@ def _group_items_by_module(bom):
 
 
 def _calculate_bom_pricing(bom):
-    """重新計算 BOM 建議價格，回傳 dict"""
+    """
+    重新計算 BOM 建議價格，回傳 dict
+    計價點數：優先使用 custom_points，否則用 items 加總
+    """
     modules_used = {
         item.function.module
         for item in bom.items
@@ -58,10 +61,12 @@ def _calculate_bom_pricing(bom):
         for m in modules_used
     )
 
-    tier        = PricingTier.get_effective_tier(bom.plan_type, bom.total_points)
-    points_cost = tier.calculate_total_price(bom.total_points) if tier else bom.total_points * 1000
-    base_price  = modules_cost + points_cost
-    suggested   = base_price * bom.plan_years if bom.plan_type == 'yearly' else base_price
+    # 使用 get_effective_points() 取得計價點數（支援 custom_points 覆蓋）
+    billing_points = bom.get_effective_points()
+    tier           = PricingTier.get_effective_tier(bom.plan_type, billing_points)
+    points_cost    = tier.calculate_total_price(billing_points) if tier else billing_points * 1000
+    base_price     = modules_cost + points_cost
+    suggested      = base_price * bom.plan_years if bom.plan_type == 'yearly' else base_price
 
     return {
         'modules_cost':    modules_cost,
@@ -187,6 +192,9 @@ def create():
     function_ids = request.form.getlist('function_ids')
     quantities   = request.form.getlist('quantities')
     notes_list   = request.form.getlist('notes')
+    # 自訂點數：空白或未填視為 None（沿用系統計算）
+    custom_points_raw = request.form.get('custom_points', '').strip()
+    custom_points     = int(custom_points_raw) if custom_points_raw.isdigit() else None
 
     # 決定業務指派
     if source_type == 'from_booking' and booking_id:
@@ -236,6 +244,9 @@ def create():
         created_by_id       = current_user.id,
         assigned_sales_id   = assigned_id,
     )
+    # 儲存自訂點數（None 表示沿用系統計算）
+    new_bom.custom_points = custom_points
+
     db.session.add(new_bom)
     db.session.flush()  # 取得 new_bom.id
 
@@ -284,7 +295,7 @@ def detail(bom_id):
                            bom=bom,
                            bom_items_by_module=bom_items_by_module,
                            bom_items_list=bom_items_list,
-                           sales_users=sales_users)          # ← 補上此行
+                           sales_users=sales_users)
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +338,9 @@ def edit(bom_id):
     function_ids = request.form.getlist('function_ids')
     quantities   = request.form.getlist('quantities')
     notes_list   = request.form.getlist('notes')
+    # 自訂點數：空白視為 None（清除覆蓋，回到系統計算）
+    custom_points_raw = request.form.get('custom_points', '').strip()
+    custom_points     = int(custom_points_raw) if custom_points_raw.isdigit() else None
 
     if not company or not project_name or not plan_type or not plan_years or not function_ids:
         flash('請填寫所有必填欄位並至少選擇一個功能', 'warning')
@@ -349,6 +363,7 @@ def edit(bom_id):
     bom.project_description = request.form.get('project_description', '').strip() or None
     bom.plan_type           = plan_type
     bom.plan_years          = plan_years
+    bom.custom_points       = custom_points  # 更新自訂點數
 
     if can_assign:
         new_sales_id = request.form.get('assigned_sales_id', type=int)
@@ -370,11 +385,11 @@ def edit(bom_id):
         except (ValueError, IndexError):
             continue
 
-    # 重新計算價格
-    pricing = _calculate_bom_pricing(bom)
-    bom.base_modules_cost = pricing['modules_cost']
-    bom.points_cost       = pricing['points_cost']
-    bom.suggested_price   = pricing['suggested_price']
+    # 重新計算價格（calculate_suggested_price 會自動使用 custom_points）
+    bom.calculate_suggested_price()
+    bom.base_modules_cost = _calculate_bom_pricing(bom)['modules_cost']
+    bom.points_cost       = _calculate_bom_pricing(bom)['points_cost']
+    bom.suggested_price   = _calculate_bom_pricing(bom)['suggested_price']
 
     db.session.commit()
     flash(f'BOM {bom.bom_number} 已成功更新，產品建議價格已重新計算', 'success')
@@ -545,19 +560,24 @@ def api_sales_users():
 @bom_bp.route('/api/calculate-price', methods=['POST'])
 @login_required
 def api_calculate_price():
-    """即時計算 BOM 價格"""
+    """
+    即時計算 BOM 價格
+    支援傳入 custom_points 覆蓋系統計算點數
+    """
     data           = request.get_json() or {}
     function_items = data.get('functions', [])
     plan_type      = data.get('plan_type', 'onetime')
     plan_years     = data.get('plan_years', 1)
+    custom_points  = data.get('custom_points')  # 前端傳入的自訂點數（可為 None）
 
-    total_points = 0
-    used_modules = set()
+    # 計算系統建議點數（items 加總）
+    suggested_points = 0
+    used_modules     = set()
 
     for item in function_items:
         func = Function.query.get(item.get('function_id'))
         if func:
-            total_points += func.points_per_unit * item.get('quantity', 1)
+            suggested_points += func.points_per_unit * item.get('quantity', 1)
             used_modules.add(func.module_id)
 
     modules_cost = sum(
@@ -568,16 +588,21 @@ def api_calculate_price():
         if Module.query.get(mid)
     )
 
-    tier        = PricingTier.get_effective_tier(plan_type, total_points)
-    points_cost = tier.calculate_total_price(total_points) if tier else total_points * 1000
+    # 計價點數：custom_points 有值且為有效整數時使用，否則用系統計算
+    billing_points = custom_points if isinstance(custom_points, int) and custom_points >= 0 else suggested_points
+
+    tier        = PricingTier.get_effective_tier(plan_type, billing_points)
+    points_cost = tier.calculate_total_price(billing_points) if tier else billing_points * 1000
     base_price  = modules_cost + points_cost
     suggested   = base_price * plan_years if plan_type == 'yearly' else base_price
 
     return jsonify({
-        'total_points':    total_points,
-        'modules_cost':    modules_cost,
-        'points_cost':     points_cost,
-        'suggested_price': int(suggested),
+        'suggested_points': suggested_points,   # 系統建議點數（items 加總）
+        'billing_points':   billing_points,     # 實際計價點數
+        'total_points':     suggested_points,   # 向下相容舊欄位名稱
+        'modules_cost':     modules_cost,
+        'points_cost':      points_cost,
+        'suggested_price':  int(suggested),
         'tier_info': {
             'name':            tier.tier_name,
             'price_per_point': tier.price_per_point,

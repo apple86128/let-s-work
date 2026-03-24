@@ -83,16 +83,18 @@ def create_module():
     name       = request.form.get('name', '').strip()
     code       = request.form.get('code', '').strip().upper()
     desc       = request.form.get('description', '').strip()
-    price_one  = request.form.get('base_price_onetime', type=int) or 50000
-    price_yr   = request.form.get('base_price_yearly',  type=int) or 240000
+    # 使用 None 作為預設值，避免 0 被 `or` 視為 falsy 而套用預設價格
+    price_one  = request.form.get('base_price_onetime', type=int)
+    price_yr   = request.form.get('base_price_yearly',  type=int)
     sort_order = request.form.get('sort_order', type=int) or 0
 
     if not name or not code:
         flash('請輸入模組名稱與代碼', 'warning')
         return render_template('product/module_form.html', module=None)
 
-    if price_one <= 0 or price_yr <= 0:
-        flash('價格必須大於 0', 'warning')
+    # 允許價格為 0（免費附加模組），只擋未填寫（None）或負數
+    if price_one is None or price_yr is None or price_one < 0 or price_yr < 0:
+        flash('請填寫模組價格（可設為 0）', 'warning')
         return render_template('product/module_form.html', module=None)
 
     if Module.query.filter_by(code=code).first():
@@ -128,10 +130,18 @@ def edit_module(module_id):
         flash('請輸入模組名稱', 'warning')
         return render_template('product/module_form.html', module=module)
 
+    # 允許價格為 0，使用 None 判斷未填寫，避免 `or 50000` 覆蓋合法的 0 值
+    price_one = request.form.get('base_price_onetime', type=int)
+    price_yr  = request.form.get('base_price_yearly',  type=int)
+
+    if price_one is None or price_yr is None or price_one < 0 or price_yr < 0:
+        flash('請填寫模組價格（可設為 0）', 'warning')
+        return render_template('product/module_form.html', module=module)
+
     module.name               = name
     module.description        = request.form.get('description', '').strip() or None
-    module.base_price_onetime = request.form.get('base_price_onetime', type=int) or 50000
-    module.base_price_yearly  = request.form.get('base_price_yearly',  type=int) or 240000
+    module.base_price_onetime = price_one
+    module.base_price_yearly  = price_yr
     module.sort_order         = request.form.get('sort_order', type=int) or 0
     module.is_active          = request.form.get('is_active') == 'on'
 

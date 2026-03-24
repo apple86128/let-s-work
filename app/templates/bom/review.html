@@ -69,10 +69,28 @@
                     </table>
                 </div>
                 {% endfor %}
-                <div class="px-3 py-2 bg-light d-flex justify-content-between">
-                    <span class="fw-semibold">總計點數</span>
-                    <span class="badge bg-primary fs-6">{{ bom.total_points }} pts</span>
-                </div>
+				
+				<div class="px-3 py-2 bg-light d-flex justify-content-between">
+					<span class="fw-semibold">系統計算總點數</span>
+					<span class="badge bg-secondary fs-6">{{ bom.total_points }} pts</span>
+				</div>
+ 
+				{% if bom.custom_points is not none %}
+				<div class="px-3 py-2 d-flex justify-content-between align-items-center"
+					 style="background:#e7f1ff; border-top:1px solid #b6d4fe;">
+					<span class="fw-semibold text-primary">
+						<i class="fas fa-edit me-1"></i>最終下單點數
+						<small class="text-muted fw-normal ms-1">（自訂）</small>
+					</span>
+					<span class="badge bg-primary fs-6">{{ bom.custom_points }} pts</span>
+				</div>
+				{% else %}
+				<div class="px-3 py-2 bg-primary bg-opacity-10 d-flex justify-content-between align-items-center">
+					<span class="fw-semibold text-primary">最終下單點數</span>
+					<span class="badge bg-primary fs-6">{{ bom.total_points }} pts</span>
+				</div>
+				{% endif %}
+				
             </div>
         </div>
 
