@@ -147,7 +147,8 @@
                     <select class="form-select form-select-sm" name="assigned_sales_id">
                         {% for user in sales_users %}
                         <option value="{{ user.id }}"
-                            {{ 'selected' if bom and bom.assigned_sales_id == user.id }}>
+                            {{ 'selected' if (bom and bom.assigned_sales_id == user.id) or (not bom and booking and booking.assigned_sales_id == user.id) }}
+							>
                             {{ user.name }}
                             {% if user.extension %}（{{ user.extension }}）{% endif %}
                         </option>

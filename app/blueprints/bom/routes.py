@@ -613,21 +613,28 @@ def api_calculate_price():
 @bom_bp.route('/api/calculate-labor-price', methods=['POST'])
 @login_required
 def api_calculate_labor_price():
-    """計算人力建議價格（產品最終價格 × 10% + 5% × 年數）"""
+    """計算人力建議價格
+    買斷：base = 最終價格
+    訂閱：base = 最終價格 × 3（等效買斷）
+    人力 = base × 10% + base × 5% × 年數
+    """
     data        = request.get_json() or {}
     final_price = data.get('final_price', 0)
     plan_years  = data.get('plan_years', 1)
+    plan_type   = data.get('plan_type', 'onetime')
 
     if not final_price or final_price <= 0:
         return jsonify({'labor_suggested_price': 0, 'error': '產品最終價格必須大於 0'})
 
-    labor = int(final_price * 0.1 + final_price * 0.05 * plan_years)
+    base  = final_price * 3 if plan_type == 'yearly' else final_price
+    labor = int(base * 0.1 + base * 0.05 * plan_years)
     return jsonify({
         'labor_suggested_price': labor,
         'detail': {
-            'base_rate':    final_price * 0.1,
-            'annual_rate':  final_price * 0.05,
+            'base_price':   base,
+            'base_rate':    base * 0.1,
+            'annual_rate':  base * 0.05,
             'years':        plan_years,
-            'total_annual': final_price * 0.05 * plan_years,
+            'total_annual': base * 0.05 * plan_years,
         },
     })

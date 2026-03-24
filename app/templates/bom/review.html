@@ -121,7 +121,7 @@
                     </div>
                 </div>
                 <div class="text-muted" style="font-size:11px">
-                    人力建議價格將在輸入最終價格後自動計算（最終價格 × 10% + 5% × 年數）
+                    人力建議價格：{% if bom.plan_type == 'yearly' %}訂閱方案以最終價格 × 3 換算等效買斷後，{% endif %}再依 base × 10% + base × 5% × 年數計算
                 </div>
             </div>
         </div>
@@ -234,9 +234,12 @@ function calcDiscount() {
 }
 
 function calcLabor() {
-    var fp = parseInt(document.getElementById('final_price').value) || 0;
+    var fp       = parseInt(document.getElementById('final_price').value) || 0;
+    var planType = '{{ bom.plan_type }}';
     if (fp > 0) {
-        laborSuggested = Math.floor(fp * 0.1 + fp * 0.05 * planYears);
+        // 訂閱先換算等效買斷價格（×3）
+        var base       = planType === 'yearly' ? fp * 3 : fp;
+        laborSuggested = Math.floor(base * 0.1 + base * 0.05 * planYears);
         document.getElementById('labor-display').textContent = laborSuggested.toLocaleString();
         // 若維護價格欄位空白，自動填入
         var maint = document.getElementById('final_maintenance_price');

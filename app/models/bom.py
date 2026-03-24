@@ -190,12 +190,13 @@ class BOM(db.Model):
         if not self.final_price:
             self.labor_suggested_price = 0
             return 0
-        self.labor_suggested_price = int(self.final_price * 0.1 + self.final_price * 0.05 * self.plan_years)
+        # 訂閱方案先換算成等效買斷價格（×3），買斷直接使用
+        base = self.final_price * 3 if self.plan_type == 'yearly' else self.final_price
+        self.labor_suggested_price = int(base * 0.1 + base * 0.05 * self.plan_years)
         if not self.final_maintenance_price:
             self.final_maintenance_price = self.labor_suggested_price
             self._recalc_maintenance_discount()
         return self.labor_suggested_price
-
     def _recalc_maintenance_discount(self):
         if self.labor_suggested_price > 0 and self.final_maintenance_price is not None:
             self.maintenance_discount_rate = self.final_maintenance_price / self.labor_suggested_price
