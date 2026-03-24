@@ -9,7 +9,8 @@
 {% block sub_menu %}
 <div class="d-flex align-items-center gap-2">
     <!-- 年份切換 -->
-    <form method="GET" action="{{ url_for('kpi.dashboard') }}" class="d-flex align-items-center gap-2 mb-0">
+    <form method="GET" action="{{ url_for('kpi.dashboard') }}"
+          class="d-flex align-items-center gap-2 mb-0">
         <label class="form-label mb-0 text-muted small">年份</label>
         <select name="year" class="form-select form-select-sm" style="width:100px"
                 onchange="this.form.submit()">

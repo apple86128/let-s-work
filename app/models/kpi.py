@@ -68,30 +68,27 @@ class AnnualKpiTarget(db.Model):
 def get_kpi_statistics(year):
     """
     計算指定年度的 KPI 統計數據
-    資料鏈：Project → BOM（bom_id）→ final_price / final_maintenance_price
-    季度依據：BOM.reviewed_at（批准日期）
+
+    季度歸屬依據：Project.start_date（專案追蹤所設定的啟動日期）
+    金額來源：對應 BOM 的 final_price（產品）/ final_maintenance_price（人力）
 
     回傳結構：
     {
-        'planning': {件數, 產品金額, 人力金額},
+        'planning': {count, product_amount, labor_amount},
         'billed':   {
-            'total': {件數, 產品金額, 人力金額},
-            'q1'~'q4': {件數, 產品金額, 人力金額}
+            'total': {count, product_amount, labor_amount},
+            'q1'~'q4': {count, product_amount, labor_amount}
         },
-        'lost':     {件數, 產品金額, 人力金額},
+        'lost':     {count, product_amount, labor_amount},
     }
     """
     from app.models.project import Project
     from app.models.bom     import BOM
 
-    # 計畫中狀態
     PLANNING_STATUSES = ('waiting',)
-    # 已入帳狀態
     BILLED_STATUSES   = ('building', 'maintaining', 'ended')
-    # 終結狀態
     LOST_STATUSES     = ('lost',)
 
-    # 季度起迄月份對照
     QUARTERS = {
         'q1': (1,  3),
         'q2': (4,  6),
@@ -102,15 +99,18 @@ def get_kpi_statistics(year):
     def _empty_bucket():
         return {'count': 0, 'product_amount': 0, 'labor_amount': 0}
 
+    def _get_bom(proj):
+        """取得此專案對應的已核准 BOM，無則回傳 None"""
+        if not proj.bom_id:
+            return None
+        return BOM.query.filter_by(id=proj.bom_id, is_deleted=False).first()
+
     def _sum_projects(projects):
-        """加總一批 Project 的金額"""
+        """加總一批 Project 的件數與金額"""
         result = _empty_bucket()
         for proj in projects:
-            bom = BOM.query.filter_by(
-                id=proj.bom_id, is_deleted=False
-            ).first() if proj.bom_id else None
-
-            result['count'] += 1
+            bom = _get_bom(proj)
+            result['count']          += 1
             result['product_amount'] += (bom.final_price             or 0) if bom else 0
             result['labor_amount']   += (bom.final_maintenance_price or 0) if bom else 0
         return result
@@ -122,21 +122,17 @@ def get_kpi_statistics(year):
             Project.is_deleted == False,
         ).all()
 
+    def _filter_in_year(projects):
+        """篩出 start_date 落在指定年度的專案"""
+        return [p for p in projects if p.start_date and p.start_date.year == year]
+
     def _filter_by_quarter(projects, q_start_month, q_end_month):
-        """
-        從 projects 清單中篩出 BOM 批准日期落在指定季度的項目
-        只計算已入帳狀態（有 bom_id 且 BOM 已批准）
-        """
+        """篩出 start_date 落在指定季度的專案"""
         result = []
         for proj in projects:
-            if not proj.bom_id:
+            if not proj.start_date or proj.start_date.year != year:
                 continue
-            bom = BOM.query.filter_by(id=proj.bom_id, is_deleted=False).first()
-            if not bom or not bom.reviewed_at:
-                continue
-            if bom.reviewed_at.year != year:
-                continue
-            if q_start_month <= bom.reviewed_at.month <= q_end_month:
+            if q_start_month <= proj.start_date.month <= q_end_month:
                 result.append(proj)
         return result
 
@@ -146,17 +142,14 @@ def get_kpi_statistics(year):
     billed_projects   = _get_projects_by_status(BILLED_STATUSES)
     lost_projects     = _get_projects_by_status(LOST_STATUSES)
 
-    # 已入帳：先篩出年度內有 BOM 批准日期的專案
-    billed_in_year = [
-        p for p in billed_projects
-        if p.bom_id and _has_bom_reviewed_in_year(p.bom_id, year)
-    ]
+    # 已入帳：只計算參考日期落在本年度的專案
+    billed_in_year = _filter_in_year(billed_projects)
 
-    # 各季分組
-    billed_quarters = {}
-    for q_key, (start_m, end_m) in QUARTERS.items():
-        q_projects = _filter_by_quarter(billed_projects, start_m, end_m)
-        billed_quarters[q_key] = _sum_projects(q_projects)
+    # Q1~Q4 季度分組
+    billed_quarters = {
+        q_key: _sum_projects(_filter_by_quarter(billed_projects, start_m, end_m))
+        for q_key, (start_m, end_m) in QUARTERS.items()
+    }
 
     return {
         'planning': _sum_projects(planning_projects),
@@ -166,12 +159,3 @@ def get_kpi_statistics(year):
         },
         'lost': _sum_projects(lost_projects),
     }
-
-
-def _has_bom_reviewed_in_year(bom_id, year):
-    """確認此 BOM 的批准日期是否在指定年度內"""
-    from app.models.bom import BOM
-    bom = BOM.query.filter_by(id=bom_id, is_deleted=False).first()
-    if not bom or not bom.reviewed_at:
-        return False
-    return bom.reviewed_at.year == year

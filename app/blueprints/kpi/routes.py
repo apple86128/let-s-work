@@ -51,10 +51,9 @@ def _calc_rate(actual, target):
 @permission_required('kpi_view')
 def dashboard():
     """年度 KPI 統計總覽頁"""
-    year           = request.args.get('year', _current_year(), type=int)
+    year            = request.args.get('year', _current_year(), type=int)
     available_years = _available_years()
 
-    # 確保選擇的年份在合法範圍內
     if year not in available_years:
         year = _current_year()
 
@@ -62,7 +61,7 @@ def dashboard():
     target = AnnualKpiTarget.get_or_create(year, created_by_id=current_user.id)
     db.session.commit()
 
-    # 計算統計數據
+    # 計算統計數據（季度依據：Project.start_date）
     stats = get_kpi_statistics(year)
 
     # 計算達成率（以「已入帳」為分子）
