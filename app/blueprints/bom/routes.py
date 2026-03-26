@@ -61,7 +61,6 @@ def _calculate_bom_pricing(bom):
         for m in modules_used
     )
 
-    # 使用 get_effective_points() 取得計價點數（支援 custom_points 覆蓋）
     billing_points = bom.get_effective_points()
     tier           = PricingTier.get_effective_tier(bom.plan_type, billing_points)
     points_cost    = tier.calculate_total_price(billing_points) if tier else billing_points * 1000
@@ -76,6 +75,33 @@ def _calculate_bom_pricing(bom):
 
 
 # ---------------------------------------------------------------------------
+# 專案狀態統計工具函數
+# ---------------------------------------------------------------------------
+
+def _get_project_status_stats(user):
+    """
+    計算各專案狀態的 BOM 件數，依角色範圍篩選：
+      - admin / pm：全部 BOM
+      - sales：只計算自己負責的 BOM
+    回傳結構：
+    {
+        'none':       int,  # 未設定
+        'in_progress': int, # POC + 備標中（合併顯示）
+        'won':        int,  # 已成案
+        'closed':     int,  # 已終結
+    }
+    """
+    base = get_boms_for_user(user)  # 已依角色過濾，回傳 Query
+
+    return {
+        'none':        base.filter(BOM.project_status == 'none').count(),
+        'in_progress': base.filter(BOM.project_status.in_(['poc', 'bidding'])).count(),
+        'won':         base.filter(BOM.project_status == 'won').count(),
+        'closed':      base.filter(BOM.project_status == 'closed').count(),
+    }
+
+
+# ---------------------------------------------------------------------------
 # 列表
 # ---------------------------------------------------------------------------
 
@@ -84,11 +110,12 @@ def _calculate_bom_pricing(bom):
 @permission_required('bom_view')
 def index():
     """BOM 列表頁面"""
-    page          = request.args.get('page', 1, type=int)
-    status_filter = request.args.get('status', '')
-    source_filter = request.args.get('source', '')
-    search_query  = request.args.get('search', '')
-    per_page      = 20
+    page                  = request.args.get('page', 1, type=int)
+    status_filter         = request.args.get('status', '')
+    source_filter         = request.args.get('source', '')
+    search_query          = request.args.get('search', '')
+    project_status_filter = request.args.get('project_status', '')  # 新增：專案狀態篩選
+    per_page              = 20
 
     query = get_boms_for_user(current_user)
 
@@ -96,6 +123,8 @@ def index():
         query = query.filter(BOM.status == status_filter)
     if source_filter:
         query = query.filter(BOM.source_type == source_filter)
+    if project_status_filter:
+        query = query.filter(BOM.project_status == project_status_filter)
     if search_query:
         query = query.filter(
             db.or_(
@@ -108,12 +137,18 @@ def index():
     boms  = query.paginate(page=page, per_page=per_page, error_out=False)
     stats = get_bom_statistics_for_user(current_user)
 
+    # 專案狀態統計（依角色範圍，與審核統計一致）
+    project_stats = _get_project_status_stats(current_user)
+
     return render_template('bom/list.html',
                            boms=boms,
                            stats=stats,
+                           project_stats=project_stats,
                            status_filter=status_filter,
                            source_filter=source_filter,
-                           search_query=search_query)
+                           search_query=search_query,
+                           project_status_filter=project_status_filter,
+                           project_status_options=BOM.PROJECT_STATUS_DISPLAY)
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +169,6 @@ def source_select():
         status='approved', is_deleted=False
     )
 
-    # 業務人員只能看自己的 Booking
     if current_user.has_role('sales') and not (
         current_user.has_role('admin') or current_user.has_role('pm')
     ):
@@ -159,20 +193,21 @@ def source_select():
 
 
 # ---------------------------------------------------------------------------
-# 建立
+# 新建
 # ---------------------------------------------------------------------------
 
 @bom_bp.route('/create', methods=['GET', 'POST'])
 @login_required
 @permission_required('bom_create')
 def create():
-    """建立新 BOM"""
+    """新建 BOM"""
     source_type = request.args.get('source', 'direct_create')
     booking_id  = request.args.get('booking_id', type=int)
+    booking     = CustomerBooking.query.get(booking_id) if booking_id else None
+
     can_assign  = current_user.has_role('admin') or current_user.has_role('pm')
     sales_users = _get_sales_users() if can_assign else []
     modules     = _load_modules_with_functions()
-    booking     = CustomerBooking.query.get(booking_id) if booking_id else None
 
     if request.method == 'GET':
         return render_template('bom/form.html',
@@ -183,8 +218,6 @@ def create():
                                sales_users=sales_users)
 
     # POST：取得表單資料
-    source_type  = request.form.get('source_type', 'direct_create')
-    booking_id   = request.form.get('booking_id', type=int) or None
     company      = request.form.get('customer_company', '').strip()
     project_name = request.form.get('project_name', '').strip()
     plan_type    = request.form.get('plan_type')
@@ -192,27 +225,25 @@ def create():
     function_ids = request.form.getlist('function_ids')
     quantities   = request.form.getlist('quantities')
     notes_list   = request.form.getlist('notes')
-    # 自訂點數：空白或未填視為 None（沿用系統計算）
+
     custom_points_raw = request.form.get('custom_points', '').strip()
     custom_points     = int(custom_points_raw) if custom_points_raw.isdigit() else None
 
-    # 決定業務指派
-    if source_type == 'from_booking' and booking_id:
-        bk = CustomerBooking.query.get(booking_id)
-        assigned_id = bk.assigned_sales_id if bk else current_user.id
-    elif can_assign:
+    assigned_id = current_user.id
+    if can_assign:
         assigned_id = request.form.get('assigned_sales_id', type=int) or current_user.id
-    else:
-        assigned_id = current_user.id
 
-    # 驗證
+    if not company or not project_name or not plan_type or not plan_years or not function_ids:
+        flash('請填寫所有必填欄位並至少選擇一個功能', 'warning')
+        return render_template('bom/form.html',
+                               bom=None,
+                               source_type=source_type,
+                               booking=booking,
+                               modules=modules,
+                               sales_users=sales_users)
+
+    # 驗證數量
     errors = []
-    if not company:      errors.append('請輸入客戶公司名稱')
-    if not project_name: errors.append('請輸入專案名稱')
-    if plan_type not in ('onetime', 'yearly'): errors.append('請選擇有效的方案類型')
-    if not plan_years or not (1 <= plan_years <= 7): errors.append('請選擇 1-7 年的方案年數')
-    if not function_ids: errors.append('請至少選擇一個功能項目')
-
     for i, qty_str in enumerate(quantities):
         try:
             if int(qty_str) <= 0:
@@ -230,7 +261,6 @@ def create():
                                modules=modules,
                                sales_users=sales_users)
 
-    # 建立 BOM
     new_bom = BOM(
         customer_company    = company,
         project_name        = project_name,
@@ -244,13 +274,11 @@ def create():
         created_by_id       = current_user.id,
         assigned_sales_id   = assigned_id,
     )
-    # 儲存自訂點數（None 表示沿用系統計算）
     new_bom.custom_points = custom_points
 
     db.session.add(new_bom)
-    db.session.flush()  # 取得 new_bom.id
+    db.session.flush()
 
-    # 建立 BOM 項目
     for i, function_id in enumerate(function_ids):
         try:
             qty   = int(quantities[i])
@@ -287,7 +315,6 @@ def detail(bom_id):
     bom_items_by_module = _group_items_by_module(bom)
     bom_items_list      = list(bom.items)
 
-    # admin / pm 才需要業務指派下拉選單
     can_assign  = current_user.has_role('admin') or current_user.has_role('pm')
     sales_users = _get_sales_users() if can_assign else []
 
@@ -295,7 +322,8 @@ def detail(bom_id):
                            bom=bom,
                            bom_items_by_module=bom_items_by_module,
                            bom_items_list=bom_items_list,
-                           sales_users=sales_users)
+                           sales_users=sales_users,
+                           project_status_options=BOM.PROJECT_STATUS_DISPLAY)
 
 
 # ---------------------------------------------------------------------------
@@ -317,7 +345,6 @@ def edit(bom_id):
     modules     = _load_modules_with_functions()
     booking     = CustomerBooking.query.get(bom.booking_id) if bom.booking_id else None
 
-    # 提醒：已批准 / 拒絕的 BOM 編輯後會重置狀態
     if bom.status in ('approved', 'rejected'):
         flash(f'注意：此 BOM 目前狀態為「{bom.STATUS_DISPLAY.get(bom.status)}」，'
               f'編輯後將重置為「待審核」狀態', 'warning')
@@ -330,7 +357,6 @@ def edit(bom_id):
                                modules=modules,
                                sales_users=sales_users)
 
-    # POST：取得表單資料
     company      = request.form.get('customer_company', '').strip()
     project_name = request.form.get('project_name', '').strip()
     plan_type    = request.form.get('plan_type')
@@ -338,7 +364,7 @@ def edit(bom_id):
     function_ids = request.form.getlist('function_ids')
     quantities   = request.form.getlist('quantities')
     notes_list   = request.form.getlist('notes')
-    # 自訂點數：空白視為 None（清除覆蓋，回到系統計算）
+
     custom_points_raw = request.form.get('custom_points', '').strip()
     custom_points     = int(custom_points_raw) if custom_points_raw.isdigit() else None
 
@@ -351,11 +377,9 @@ def edit(bom_id):
                                modules=modules,
                                sales_users=sales_users)
 
-    # 狀態重置（若原為已批准 / 拒絕）
     if bom.status in ('approved', 'rejected'):
         bom.reset_to_pending('因編輯內容變更', current_user.id)
 
-    # 更新基本欄位
     bom.customer_company    = company
     bom.project_name        = project_name
     bom.customer_contact    = request.form.get('customer_contact', '').strip() or None
@@ -363,14 +387,13 @@ def edit(bom_id):
     bom.project_description = request.form.get('project_description', '').strip() or None
     bom.plan_type           = plan_type
     bom.plan_years          = plan_years
-    bom.custom_points       = custom_points  # 更新自訂點數
+    bom.custom_points       = custom_points
 
     if can_assign:
         new_sales_id = request.form.get('assigned_sales_id', type=int)
         if new_sales_id and new_sales_id != bom.assigned_sales_id:
             bom.assigned_sales_id = new_sales_id
 
-    # 重建 BOM 項目
     BOMItem.query.filter_by(bom_id=bom.id).delete()
     for i, function_id in enumerate(function_ids):
         try:
@@ -385,14 +408,9 @@ def edit(bom_id):
         except (ValueError, IndexError):
             continue
 
-    # 重新計算價格（calculate_suggested_price 會自動使用 custom_points）
     bom.calculate_suggested_price()
-    bom.base_modules_cost = _calculate_bom_pricing(bom)['modules_cost']
-    bom.points_cost       = _calculate_bom_pricing(bom)['points_cost']
-    bom.suggested_price   = _calculate_bom_pricing(bom)['suggested_price']
-
     db.session.commit()
-    flash(f'BOM {bom.bom_number} 已成功更新，產品建議價格已重新計算', 'success')
+    flash(f'BOM {bom.bom_number} 已成功更新', 'success')
     return redirect(url_for('bom.detail', bom_id=bom.id))
 
 
@@ -410,7 +428,6 @@ def review(bom_id):
         flash('您沒有權限審核此 BOM', 'danger')
         return redirect(url_for('bom.detail', bom_id=bom_id))
 
-    # 預先準備 template 所需變數（GET 與 POST 驗證失敗都會用到）
     bom_items_by_module = _group_items_by_module(bom)
     bom_items_list      = list(bom.items)
 
@@ -426,7 +443,6 @@ def review(bom_id):
     action      = request.form.get('action')
     notes       = request.form.get('notes', '').strip()
     final_price = request.form.get('final_price', type=int)
-
     final_maintenance_price = request.form.get('final_maintenance_price', type=int)
 
     if action == 'approve':
@@ -449,7 +465,6 @@ def review(bom_id):
         flash(f'BOM {bom.bom_number} 已拒絕', 'warning')
 
     elif action == 'update_price':
-        # 僅更新價格，不改變審核狀態
         bom.update_price_only(
             user_id                 = current_user.id,
             final_price             = final_price if final_price and final_price > 0 else None,
@@ -463,6 +478,34 @@ def review(bom_id):
         return _render_review()
 
     db.session.commit()
+    return redirect(url_for('bom.detail', bom_id=bom_id))
+
+
+# ---------------------------------------------------------------------------
+# 更新專案狀態（新增）
+# ---------------------------------------------------------------------------
+
+@bom_bp.route('/<int:bom_id>/project-status', methods=['POST'])
+@login_required
+def update_project_status(bom_id):
+    """更新 BOM 的專案狀態（admin / pm 專用）"""
+    if not (current_user.has_role('admin') or current_user.has_role('pm')):
+        flash('您沒有權限變更專案狀態', 'danger')
+        return redirect(url_for('bom.detail', bom_id=bom_id))
+
+    bom        = BOM.query.get_or_404(bom_id)
+    new_status = request.form.get('project_status', '').strip()
+    close_reason = request.form.get('project_close_reason', '').strip() or None
+
+    valid_statuses = list(BOM.PROJECT_STATUS_DISPLAY.keys())
+    if new_status not in valid_statuses:
+        flash('無效的專案狀態', 'danger')
+        return redirect(url_for('bom.detail', bom_id=bom_id))
+
+    bom.update_project_status(new_status, close_reason=close_reason)
+    db.session.commit()
+
+    flash(f'專案狀態已更新為「{bom.get_project_status_display()}」', 'success')
     return redirect(url_for('bom.detail', bom_id=bom_id))
 
 
@@ -568,28 +611,26 @@ def api_calculate_price():
     function_items = data.get('functions', [])
     plan_type      = data.get('plan_type', 'onetime')
     plan_years     = data.get('plan_years', 1)
-    custom_points  = data.get('custom_points')  # 前端傳入的自訂點數（可為 None）
+    custom_points  = data.get('custom_points')
 
-    # 計算系統建議點數（items 加總）
-    suggested_points = 0
-    used_modules     = set()
+    total_points = 0
+    modules_used = set()
 
     for item in function_items:
         func = Function.query.get(item.get('function_id'))
-        if func:
-            suggested_points += func.points_per_unit * item.get('quantity', 1)
-            used_modules.add(func.module_id)
+        if not func:
+            continue
+        qty           = item.get('quantity', 1)
+        total_points += func.points_per_unit * qty
+        if func.module:
+            modules_used.add(func.module)
+
+    billing_points = custom_points if custom_points is not None else total_points
 
     modules_cost = sum(
-        Module.query.get(mid).base_price_onetime
-        if plan_type == 'onetime'
-        else (Module.query.get(mid).base_price_yearly or 0)
-        for mid in used_modules
-        if Module.query.get(mid)
+        m.base_price_onetime if plan_type == 'onetime' else (m.base_price_yearly or 0)
+        for m in modules_used
     )
-
-    # 計價點數：custom_points 有值且為有效整數時使用，否則用系統計算
-    billing_points = custom_points if isinstance(custom_points, int) and custom_points >= 0 else suggested_points
 
     tier        = PricingTier.get_effective_tier(plan_type, billing_points)
     points_cost = tier.calculate_total_price(billing_points) if tier else billing_points * 1000
@@ -597,44 +638,9 @@ def api_calculate_price():
     suggested   = base_price * plan_years if plan_type == 'yearly' else base_price
 
     return jsonify({
-        'suggested_points': suggested_points,   # 系統建議點數（items 加總）
-        'billing_points':   billing_points,     # 實際計價點數
-        'total_points':     suggested_points,   # 向下相容舊欄位名稱
-        'modules_cost':     modules_cost,
-        'points_cost':      points_cost,
-        'suggested_price':  int(suggested),
-        'tier_info': {
-            'name':            tier.tier_name,
-            'price_per_point': tier.price_per_point,
-        } if tier else None,
-    })
-
-
-@bom_bp.route('/api/calculate-labor-price', methods=['POST'])
-@login_required
-def api_calculate_labor_price():
-    """計算人力建議價格
-    買斷：base = 最終價格
-    訂閱：base = 最終價格 × 3（等效買斷）
-    人力 = base × 10% + base × 5% × 年數
-    """
-    data        = request.get_json() or {}
-    final_price = data.get('final_price', 0)
-    plan_years  = data.get('plan_years', 1)
-    plan_type   = data.get('plan_type', 'onetime')
-
-    if not final_price or final_price <= 0:
-        return jsonify({'labor_suggested_price': 0, 'error': '產品最終價格必須大於 0'})
-
-    base  = final_price * 3 if plan_type == 'yearly' else final_price
-    labor = int(base * 0.1 + base * 0.05 * plan_years)
-    return jsonify({
-        'labor_suggested_price': labor,
-        'detail': {
-            'base_price':   base,
-            'base_rate':    base * 0.1,
-            'annual_rate':  base * 0.05,
-            'years':        plan_years,
-            'total_annual': base * 0.05 * plan_years,
-        },
+        'total_points':    total_points,
+        'billing_points':  billing_points,
+        'modules_cost':    modules_cost,
+        'points_cost':     points_cost,
+        'suggested_price': int(suggested),
     })

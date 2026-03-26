@@ -5,19 +5,20 @@
 {% block page_title %}
 <i class="fas fa-file-alt me-2 text-primary"></i>{{ bom.bom_number }}
 <span class="badge bg-{{ bom.get_status_color() }} ms-2">{{ bom.get_status_display() }}</span>
+{% if bom.project_status and bom.project_status != 'none' %}
+<span class="badge bg-{{ bom.get_project_status_color() }} ms-1">{{ bom.get_project_status_display() }}</span>
+{% endif %}
 {% endblock %}
 
 {% block sub_menu %}
 <div class="d-flex gap-2">
     {% if bom.can_be_edited_by(current_user) %}
-    <a href="{{ url_for('bom.edit', bom_id=bom.id) }}"
-       class="btn btn-outline-primary btn-sm">
+    <a href="{{ url_for('bom.edit', bom_id=bom.id) }}" class="btn btn-outline-primary btn-sm">
         <i class="fas fa-edit me-1"></i>編輯
     </a>
     {% endif %}
     {% if bom.can_be_reviewed_by(current_user) %}
-    <a href="{{ url_for('bom.review', bom_id=bom.id) }}"
-       class="btn btn-warning btn-sm">
+    <a href="{{ url_for('bom.review', bom_id=bom.id) }}" class="btn btn-warning btn-sm">
         <i class="fas fa-gavel me-1"></i>審核
     </a>
     {% endif %}
@@ -33,7 +34,7 @@
     <!-- 左欄：主要資訊 -->
     <div class="col-lg-8">
 
-        <!-- 客戶與專案資訊 -->
+        <!-- 客戶資訊 -->
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
                 <h6 class="mb-0"><i class="fas fa-building me-2"></i>客戶資訊</h6>
@@ -99,61 +100,27 @@
                                     <br><small class="text-muted">{{ item.notes }}</small>
                                     {% endif %}
                                 </td>
-                                <td class="text-center small text-muted">
-                                    {{ item.function.unit_name }}
-                                </td>
-                                <td class="text-end">
-                                    <span class="badge bg-secondary">{{ item.unit_points }}</span>
-                                </td>
-                                <td class="text-end">{{ item.quantity }}</td>
-                                <td class="text-end fw-semibold">{{ item.total_points }}</td>
+                                <td class="text-center small text-muted">{{ item.function.unit_name }}</td>
+                                <td class="text-end small">{{ item.unit_points }}</td>
+                                <td class="text-end small">{{ item.quantity }}</td>
+                                <td class="text-end small fw-semibold">{{ item.total_points }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
-                {% else %}
-                <div class="text-center text-muted py-4">
-                    <i class="fas fa-list fa-2x mb-2 d-block opacity-25"></i>
-                    尚未加入任何功能項目
-                </div>
                 {% endfor %}
-                {% if bom_items_list %}
-				
-                <div class="px-3 py-2 bg-light d-flex justify-content-between align-items-center">
-					<span class="fw-semibold">系統計算總點數</span>
-					<span class="badge bg-secondary fs-6">{{ bom.total_points }} pts</span>
-				</div>
- 
-				{% if bom.custom_points is not none %}
-				<div class="px-3 py-2 d-flex justify-content-between align-items-center"
-					 style="background:#e7f1ff; border-top:1px solid #b6d4fe;">
-					<span class="fw-semibold text-primary">
-						<i class="fas fa-edit me-1"></i>最終下單點數
-						<small class="text-muted fw-normal ms-1">（自訂）</small>
-					</span>
-					<span class="badge bg-primary fs-6">{{ bom.custom_points }} pts</span>
-				</div>
-				{% else %}
-				<div class="px-3 py-2 bg-primary bg-opacity-10 d-flex justify-content-between align-items-center">
-					<span class="fw-semibold text-primary">最終下單點數</span>
-					<span class="badge bg-primary fs-6">{{ bom.total_points }} pts</span>
-				</div>
-				{% endif %}
-                {% endif %}
             </div>
         </div>
 
         <!-- 審核意見 -->
         {% if bom.review_notes %}
-        <div class="card border-0 shadow-sm mb-4 border-{{ bom.get_status_color() }}">
-            <div class="card-header bg-{{ bom.get_status_color() }} bg-opacity-10 border-bottom">
-                <h6 class="mb-0">
-                    <i class="fas fa-comment-alt me-2"></i>審核意見
-                </h6>
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-comment-alt me-2"></i>審核意見</h6>
             </div>
             <div class="card-body">
-                <p class="mb-0">{{ bom.review_notes }}</p>
+                <p class="mb-1">{{ bom.review_notes }}</p>
                 {% if bom.reviewed_by %}
                 <small class="text-muted">
                     — {{ bom.reviewed_by.name }}
@@ -167,7 +134,7 @@
         {% endif %}
 
         <!-- 審核入口（admin/pm） -->
-        {% if bom.can_be_reviewed_by(current_user) %}
+        {% if bom.can_be_reviewed_by(current_user) and bom.status == 'pending' %}
         <div class="alert alert-warning d-flex align-items-center gap-3">
             <i class="fas fa-gavel fa-lg text-warning"></i>
             <div>
@@ -184,12 +151,99 @@
     <!-- 右欄：側邊資訊 -->
     <div class="col-lg-4">
 
+        <!-- 專案狀態卡片（新增）-->
+        {% if current_user.has_role('admin') or current_user.has_role('pm') %}
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0">
+                    <i class="fas fa-tasks me-2 text-info"></i>專案狀態
+                </h6>
+            </div>
+            <div class="card-body p-3">
+
+                <!-- 目前狀態顯示 -->
+                <div class="mb-3">
+                    <span class="badge bg-{{ bom.get_project_status_color() }} fs-6 px-3 py-2">
+                        {{ bom.get_project_status_display() }}
+                    </span>
+                    {% if bom.project_status == 'closed' and bom.project_close_reason %}
+                    <div class="mt-2 small text-muted border-start border-2 ps-2">
+                        {{ bom.project_close_reason }}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- 狀態更新表單 -->
+                <form method="POST"
+                      action="{{ url_for('bom.update_project_status', bom_id=bom.id) }}"
+                      id="project-status-form">
+
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-1">變更狀態</label>
+                        <select class="form-select form-select-sm" name="project_status"
+                                id="project-status-select">
+                            {% for key, label in project_status_options.items() %}
+                            <option value="{{ key }}"
+                                {{ 'selected' if bom.project_status == key }}>
+                                {{ label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- 終結原因（只有選 closed 才顯示）-->
+                    <div class="mb-2" id="close-reason-block"
+                         style="{{ '' if bom.project_status == 'closed' else 'display:none' }}">
+                        <label class="form-label small fw-semibold mb-1">
+                            終結原因 <span class="text-muted fw-normal">（選填）</span>
+                        </label>
+                        <textarea class="form-control form-control-sm" name="project_close_reason"
+                                  rows="2" placeholder="記錄終結原因...">{{ bom.project_close_reason or '' }}</textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-sm btn-info text-white w-100">
+                        <i class="fas fa-save me-1"></i>更新狀態
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% else %}
+        <!-- Sales 等其他角色：只顯示狀態，不顯示操作 -->
+        {% if bom.project_status and bom.project_status != 'none' %}
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-tasks me-2 text-info"></i>專案狀態</h6>
+            </div>
+            <div class="card-body p-3">
+                <span class="badge bg-{{ bom.get_project_status_color() }} fs-6 px-3 py-2">
+                    {{ bom.get_project_status_display() }}
+                </span>
+                {% if bom.project_status == 'closed' and bom.project_close_reason %}
+                <div class="mt-2 small text-muted border-start border-2 ps-2">
+                    {{ bom.project_close_reason }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+        {% endif %}
+
         <!-- 價格資訊 -->
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-header bg-white border-bottom">
                 <h6 class="mb-0"><i class="fas fa-calculator me-2 text-primary"></i>價格資訊</h6>
             </div>
             <div class="card-body p-3 small">
+                <div class="d-flex justify-content-between mb-1">
+                    <span class="text-muted">系統計算點數</span>
+                    <span>{{ bom.total_points }}</span>
+                </div>
+                {% if bom.custom_points is not none %}
+                <div class="d-flex justify-content-between mb-1">
+                    <span class="text-muted">自訂計費點數</span>
+                    <span class="text-warning fw-semibold">{{ bom.custom_points }}</span>
+                </div>
+                {% endif %}
                 <div class="d-flex justify-content-between mb-1">
                     <span class="text-muted">模組費用</span>
                     <span>{{ '{:,}'.format(bom.base_modules_cost) if bom.base_modules_cost else '-' }}</span>
@@ -202,7 +256,7 @@
                     <span class="text-muted">產品建議價格</span>
                     <span class="fw-semibold">{{ '{:,}'.format(bom.suggested_price) if bom.suggested_price else '-' }}</span>
                 </div>
-                {% if bom.can_view_pricing(current_user) and bom.final_price %}
+                {% if bom.final_price %}
                 <hr class="my-2">
                 <div class="d-flex justify-content-between mb-1">
                     <span class="text-muted">折扣率</span>
@@ -238,12 +292,6 @@
                 <div class="fw-semibold">{{ bom.assigned_sales.name if bom.assigned_sales else '-' }}</div>
                 {% if bom.assigned_sales %}
                 <div class="text-muted">{{ bom.assigned_sales.email }}</div>
-                {% if bom.is_cross_created() %}
-                <div class="text-muted mt-1">
-                    <i class="fas fa-info-circle me-1"></i>
-                    建立者：{{ bom.created_by.name if bom.created_by else '-' }}
-                </div>
-                {% endif %}
                 {% endif %}
 
                 <!-- 重新指派（admin/pm） -->
@@ -255,59 +303,59 @@
                             <option value="">選擇業務...</option>
                             {% for user in sales_users %}
                             <option value="{{ user.id }}"
-                                {{ 'selected' if bom.assigned_sales_id == user.id }}>
+                                {{ 'selected' if user.id == bom.assigned_sales_id }}>
                                 {{ user.name }}
-                                {% if user.extension %}（{{ user.extension }}）{% endif %}
                             </option>
                             {% endfor %}
                         </select>
-                        <button type="submit" class="btn btn-outline-secondary">
-                            <i class="fas fa-exchange-alt"></i>
-                        </button>
+                        <button type="submit" class="btn btn-outline-secondary">指派</button>
                     </div>
                 </form>
                 {% endif %}
             </div>
         </div>
 
-        <!-- 記錄資訊 -->
+        <!-- 建立資訊 -->
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-header bg-white border-bottom">
-                <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>記錄資訊</h6>
+                <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>建立資訊</h6>
             </div>
-            <div class="card-body p-3">
-                <dl class="row mb-0 small">
+            <div class="card-body p-3 small">
+                <dl class="row mb-0">
                     <dt class="col-5 text-muted">建立者</dt>
                     <dd class="col-7">{{ bom.created_by.name if bom.created_by else '-' }}</dd>
                     <dt class="col-5 text-muted">建立時間</dt>
-                    <dd class="col-7">{{ bom.created_at.strftime('%Y-%m-%d') if bom.created_at else '-' }}</dd>
-                    {% if bom.booking %}
-                    <dt class="col-5 text-muted">來源 Booking</dt>
-                    <dd class="col-7">
-                        <a href="{{ url_for('booking.detail', booking_id=bom.booking.id) }}"
-                           class="text-decoration-none small">
-                            {{ bom.booking.company_name }}
-                        </a>
-                    </dd>
-                    {% endif %}
+                    <dd class="col-7">{{ bom.created_at.strftime('%Y-%m-%d %H:%M') if bom.created_at else '-' }}</dd>
+                    <dt class="col-5 text-muted">最後更新</dt>
+                    <dd class="col-7">{{ bom.updated_at.strftime('%Y-%m-%d %H:%M') if bom.updated_at else '-' }}</dd>
                 </dl>
             </div>
         </div>
 
-        <!-- 刪除 -->
-        {% if bom.can_be_deleted_by(current_user) %}
-        <div class="card border-0 shadow-sm border-danger">
-            <div class="card-body p-3">
-                <form method="POST" action="{{ url_for('bom.delete', bom_id=bom.id) }}"
-                      onsubmit="return confirm('確定刪除此 BOM？此動作無法復原。')">
-                    <button type="submit" class="btn btn-outline-danger btn-sm w-100">
-                        <i class="fas fa-trash me-1"></i>刪除此 BOM
-                    </button>
-                </form>
-            </div>
-        </div>
+        <!-- 刪除（admin/pm） -->
+        {% if current_user.has_role('admin') or current_user.has_role('pm') %}
+        <form method="POST" action="{{ url_for('bom.delete', bom_id=bom.id) }}"
+              onsubmit="return confirm('確定要刪除此 BOM？此操作無法復原。')">
+            <button type="submit" class="btn btn-outline-danger btn-sm w-100">
+                <i class="fas fa-trash me-1"></i>刪除 BOM
+            </button>
+        </form>
         {% endif %}
 
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 選擇「已終結」時才顯示原因備註欄
+const select      = document.getElementById('project-status-select');
+const reasonBlock = document.getElementById('close-reason-block');
+
+if (select && reasonBlock) {
+    select.addEventListener('change', function () {
+        reasonBlock.style.display = this.value === 'closed' ? '' : 'none';
+    });
+}
+</script>
 {% endblock %}

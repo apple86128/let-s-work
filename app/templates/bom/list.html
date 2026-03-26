@@ -16,7 +16,7 @@
 
 {% block content %}
 
-<!-- 統計卡片 -->
+<!-- 審核狀態統計卡片 -->
 <div class="row g-3 mb-4">
     {% set cards = [
         ('total',    '全部',   'primary', 'fas fa-list'),
@@ -40,29 +40,103 @@
     {% endfor %}
 </div>
 
-<!-- 搜尋列 -->
+<!-- 專案狀態統計卡片 -->
+<div class="row g-3 mb-4">
+
+    <!-- 未設定（可點擊篩選）-->
+    <div class="col-6 col-md-3">
+        <a href="{{ url_for('bom.index', project_status='none') }}" class="text-decoration-none">
+            <div class="card border-0 shadow-sm text-center py-3
+                        {{ 'border-secondary border-2' if project_status_filter == 'none' }}">
+                <div class="fs-2 fw-bold text-secondary">{{ project_stats.none }}</div>
+                <div class="text-muted small">
+                    <i class="fas fa-minus-circle me-1"></i>未設定
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <!-- POC & 備標中（純顯示，不可點擊）-->
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-2 fw-bold text-primary">{{ project_stats.in_progress }}</div>
+            <div class="text-muted small">
+                <i class="fas fa-spinner me-1"></i>POC &amp; 備標中
+            </div>
+        </div>
+    </div>
+
+    <!-- 已成案（可點擊篩選）-->
+    <div class="col-6 col-md-3">
+        <a href="{{ url_for('bom.index', project_status='won') }}" class="text-decoration-none">
+            <div class="card border-0 shadow-sm text-center py-3
+                        {{ 'border-success border-2' if project_status_filter == 'won' }}">
+                <div class="fs-2 fw-bold text-success">{{ project_stats.won }}</div>
+                <div class="text-muted small">
+                    <i class="fas fa-trophy me-1"></i>已成案
+                </div>
+            </div>
+        </a>
+    </div>
+
+    <!-- 已終結（可點擊篩選）-->
+    <div class="col-6 col-md-3">
+        <a href="{{ url_for('bom.index', project_status='closed') }}" class="text-decoration-none">
+            <div class="card border-0 shadow-sm text-center py-3
+                        {{ 'border-dark border-2' if project_status_filter == 'closed' }}">
+                <div class="fs-2 fw-bold text-dark">{{ project_stats.closed }}</div>
+                <div class="text-muted small">
+                    <i class="fas fa-flag-checkered me-1"></i>已終結
+                </div>
+            </div>
+        </a>
+    </div>
+
+</div>
+
+<!-- 搜尋與篩選列 -->
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-2">
         <form method="GET" action="{{ url_for('bom.index') }}" class="row g-2 align-items-center">
+
+            <!-- 關鍵字搜尋 -->
             <div class="col">
                 <input type="text" class="form-control form-control-sm" name="search"
-                       value="{{ search_query }}" placeholder="搜尋 BOM 編號、公司名稱、專案名稱...">
+                       value="{{ search_query }}"
+                       placeholder="搜尋 BOM 編號、公司名稱、專案名稱...">
             </div>
+
+            <!-- 審核狀態 -->
             <div class="col-auto">
                 <select class="form-select form-select-sm" name="status">
-                    <option value="">全部狀態</option>
+                    <option value="">全部審核狀態</option>
                     <option value="pending"  {{ 'selected' if status_filter == 'pending' }}>待審核</option>
                     <option value="approved" {{ 'selected' if status_filter == 'approved' }}>已批准</option>
                     <option value="rejected" {{ 'selected' if status_filter == 'rejected' }}>已拒絕</option>
                 </select>
             </div>
+
+            <!-- 專案狀態（新增）-->
+            <div class="col-auto">
+                <select class="form-select form-select-sm" name="project_status">
+                    <option value="">全部專案狀態</option>
+                    {% for key, label in project_status_options.items() %}
+                    <option value="{{ key }}" {{ 'selected' if project_status_filter == key }}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- 來源 -->
             <div class="col-auto">
                 <select class="form-select form-select-sm" name="source">
                     <option value="">全部來源</option>
-                    <option value="from_booking"   {{ 'selected' if source_filter == 'from_booking' }}>來自 Booking</option>
-                    <option value="direct_create"  {{ 'selected' if source_filter == 'direct_create' }}>直接建立</option>
+                    <option value="from_booking"  {{ 'selected' if source_filter == 'from_booking' }}>來自 Booking</option>
+                    <option value="direct_create" {{ 'selected' if source_filter == 'direct_create' }}>直接建立</option>
                 </select>
             </div>
+
             <div class="col-auto">
                 <button type="submit" class="btn btn-sm btn-primary">
                     <i class="fas fa-search me-1"></i>搜尋
@@ -85,7 +159,8 @@
                         <th>專案名稱</th>
                         <th>方案</th>
                         <th>總點數</th>
-                        <th>狀態</th>
+                        <th>審核狀態</th>
+                        <th>專案狀態</th>
                         <th>負責業務</th>
                         <th>建立時間</th>
                         <th class="text-end">操作</th>
@@ -94,44 +169,69 @@
                 <tbody>
                     {% for bom in boms.items %}
                     <tr>
+                        <!-- BOM 編號 -->
                         <td>
                             <a href="{{ url_for('bom.detail', bom_id=bom.id) }}"
-                               class="fw-semibold text-decoration-none font-monospace">
+                               class="fw-semibold text-decoration-none text-primary">
                                 {{ bom.bom_number }}
                             </a>
-                            {% if bom.source_type == 'from_booking' %}
-                            <i class="fas fa-shield-alt text-success ms-1" title="來自 Booking（受保護）"></i>
+                            {% if bom.is_protected() %}
+                            <i class="fas fa-shield-alt text-success ms-1 small"
+                               title="來自 Booking（受保護）"></i>
                             {% endif %}
                         </td>
+
+                        <!-- 客戶公司 -->
                         <td>{{ bom.customer_company }}</td>
-                        <td>
-                            <span class="text-truncate d-inline-block" style="max-width:180px"
-                                  title="{{ bom.project_name }}">
-                                {{ bom.project_name }}
-                            </span>
+
+                        <!-- 專案名稱 -->
+                        <td class="text-truncate" style="max-width: 180px;">
+                            {{ bom.project_name }}
                         </td>
+
+                        <!-- 方案 -->
                         <td>
-                            <small>
-                                {{ '買斷' if bom.plan_type == 'onetime' else '訂閱' }}
-                                {{ bom.plan_years }}年
-                            </small>
+                            <small class="text-muted">{{ bom.get_plan_type_display() }}</small>
                         </td>
-                        <td>
-                            <span class="badge bg-primary">{{ bom.total_points }}</span>
-                        </td>
+
+                        <!-- 總點數 -->
+                        <td>{{ bom.get_effective_points() | int }}</td>
+
+                        <!-- 審核狀態 -->
                         <td>
                             <span class="badge bg-{{ bom.get_status_color() }}">
                                 {{ bom.get_status_display() }}
                             </span>
                         </td>
+
+                        <!-- 專案狀態（新增欄位）-->
                         <td>
-                            <small>{{ bom.assigned_sales.name if bom.assigned_sales else '-' }}</small>
+                            {% if bom.project_status and bom.project_status != 'none' %}
+                            <span class="badge bg-{{ bom.get_project_status_color() }}">
+                                {{ bom.get_project_status_display() }}
+                            </span>
+                            {% else %}
+                            <span class="text-muted small">—</span>
+                            {% endif %}
                         </td>
+
+                        <!-- 負責業務 -->
+                        <td>
+                            {% if bom.assigned_sales %}
+                            <small>{{ bom.assigned_sales.name }}</small>
+                            {% else %}
+                            <small class="text-muted">未指派</small>
+                            {% endif %}
+                        </td>
+
+                        <!-- 建立時間 -->
                         <td>
                             <small class="text-muted">
-                                {{ bom.created_at.strftime('%Y-%m-%d') if bom.created_at else '-' }}
+                                {{ bom.created_at.strftime('%Y-%m-%d') }}
                             </small>
                         </td>
+
+                        <!-- 操作 -->
                         <td class="text-end">
                             <a href="{{ url_for('bom.detail', bom_id=bom.id) }}"
                                class="btn btn-sm btn-outline-primary">
@@ -141,7 +241,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="9" class="text-center text-muted py-4">
+                        <td colspan="10" class="text-center text-muted py-4">
                             <i class="fas fa-file-alt fa-2x mb-2 d-block opacity-25"></i>
                             沒有符合條件的 BOM
                         </td>
@@ -159,7 +259,7 @@
     <ul class="pagination pagination-sm justify-content-center mb-0">
         <li class="page-item {{ 'disabled' if not boms.has_prev }}">
             <a class="page-link"
-               href="{{ url_for('bom.index', page=boms.prev_num, status=status_filter, source=source_filter, search=search_query) }}">
+               href="{{ url_for('bom.index', page=boms.prev_num, status=status_filter, source=source_filter, search=search_query, project_status=project_status_filter) }}">
                 <i class="fas fa-chevron-left"></i>
             </a>
         </li>
@@ -167,7 +267,7 @@
             {% if p %}
             <li class="page-item {{ 'active' if p == boms.page }}">
                 <a class="page-link"
-                   href="{{ url_for('bom.index', page=p, status=status_filter, source=source_filter, search=search_query) }}">
+                   href="{{ url_for('bom.index', page=p, status=status_filter, source=source_filter, search=search_query, project_status=project_status_filter) }}">
                     {{ p }}
                 </a>
             </li>
@@ -177,7 +277,7 @@
         {% endfor %}
         <li class="page-item {{ 'disabled' if not boms.has_next }}">
             <a class="page-link"
-               href="{{ url_for('bom.index', page=boms.next_num, status=status_filter, source=source_filter, search=search_query) }}">
+               href="{{ url_for('bom.index', page=boms.next_num, status=status_filter, source=source_filter, search=search_query, project_status=project_status_filter) }}">
                 <i class="fas fa-chevron-right"></i>
             </a>
         </li>

@@ -69,8 +69,14 @@ def get_kpi_statistics(year):
     """
     計算指定年度的 KPI 統計數據
 
-    季度歸屬依據：Project.start_date（專案追蹤所設定的啟動日期）
-    金額來源：對應 BOM 的 final_price（產品）/ final_maintenance_price（人力）
+    資料來源：BOM.project_status（取代原本的 Project.status）
+    季度歸屬依據：BOM.won_at（狀態變更為 won 時自動記錄）
+    金額來源：BOM.final_price（產品）/ BOM.final_maintenance_price（人力）
+
+    狀態對應：
+      規劃中 → project_status in ('none', 'poc', 'bidding')
+      已入帳 → project_status = 'won'，且 won_at 落在指定年度
+      已流失 → project_status = 'closed'
 
     回傳結構：
     {
@@ -82,12 +88,11 @@ def get_kpi_statistics(year):
         'lost':     {count, product_amount, labor_amount},
     }
     """
-    from app.models.project import Project
-    from app.models.bom     import BOM
+    from app.models.bom import BOM
 
-    PLANNING_STATUSES = ('waiting',)
-    BILLED_STATUSES   = ('building', 'maintaining', 'ended')
-    LOST_STATUSES     = ('lost',)
+    PLANNING_STATUSES = ('none', 'poc', 'bidding')
+    BILLED_STATUS     = 'won'
+    LOST_STATUS       = 'closed'
 
     QUARTERS = {
         'q1': (1,  3),
@@ -99,63 +104,58 @@ def get_kpi_statistics(year):
     def _empty_bucket():
         return {'count': 0, 'product_amount': 0, 'labor_amount': 0}
 
-    def _get_bom(proj):
-        """取得此專案對應的已核准 BOM，無則回傳 None"""
-        if not proj.bom_id:
-            return None
-        return BOM.query.filter_by(id=proj.bom_id, is_deleted=False).first()
-
-    def _sum_projects(projects):
-        """加總一批 Project 的件數與金額"""
+    def _sum_boms(boms):
+        """加總一批 BOM 的件數與金額"""
         result = _empty_bucket()
-        for proj in projects:
-            bom = _get_bom(proj)
+        for bom in boms:
             result['count']          += 1
-            result['product_amount'] += (bom.final_price             or 0) if bom else 0
-            result['labor_amount']   += (bom.final_maintenance_price or 0) if bom else 0
+            result['product_amount'] += bom.final_price             or 0
+            result['labor_amount']   += bom.final_maintenance_price or 0
         return result
 
-    def _get_projects_by_status(statuses):
-        """依狀態取得未刪除的專案列表"""
-        return Project.query.filter(
-            Project.status.in_(statuses),
-            Project.is_deleted == False,
+    def _get_boms_by_status(statuses):
+        """依 project_status 取得未刪除的 BOM 列表"""
+        return BOM.query.filter(
+            BOM.project_status.in_(statuses),
+            BOM.is_deleted == False,
         ).all()
 
-    def _filter_in_year(projects):
-        """篩出 start_date 落在指定年度的專案"""
-        return [p for p in projects if p.start_date and p.start_date.year == year]
+    def _get_won_boms_in_year():
+        """取得 won_at 落在指定年度的已成案 BOM"""
+        return BOM.query.filter(
+            BOM.project_status == BILLED_STATUS,
+            BOM.won_at.isnot(None),
+            db.func.strftime('%Y', BOM.won_at) == str(year),
+            BOM.is_deleted == False,
+        ).all()
 
-    def _filter_by_quarter(projects, q_start_month, q_end_month):
-        """篩出 start_date 落在指定季度的專案"""
+    def _filter_by_quarter(boms, q_start_month, q_end_month):
+        """篩出 won_at 落在指定季度的 BOM"""
         result = []
-        for proj in projects:
-            if not proj.start_date or proj.start_date.year != year:
+        for bom in boms:
+            if not bom.won_at or bom.won_at.year != year:
                 continue
-            if q_start_month <= proj.start_date.month <= q_end_month:
-                result.append(proj)
+            if q_start_month <= bom.won_at.month <= q_end_month:
+                result.append(bom)
         return result
 
     # --- 計算各分類 ---
 
-    planning_projects = _get_projects_by_status(PLANNING_STATUSES)
-    billed_projects   = _get_projects_by_status(BILLED_STATUSES)
-    lost_projects     = _get_projects_by_status(LOST_STATUSES)
+    planning_boms = _get_boms_by_status(PLANNING_STATUSES)
+    won_boms      = _get_won_boms_in_year()          # 已入帳：won_at 在本年度
+    lost_boms     = _get_boms_by_status([LOST_STATUS])
 
-    # 已入帳：只計算參考日期落在本年度的專案
-    billed_in_year = _filter_in_year(billed_projects)
-
-    # Q1~Q4 季度分組
+    # Q1~Q4 季度分組（依 won_at）
     billed_quarters = {
-        q_key: _sum_projects(_filter_by_quarter(billed_projects, start_m, end_m))
+        q_key: _sum_boms(_filter_by_quarter(won_boms, start_m, end_m))
         for q_key, (start_m, end_m) in QUARTERS.items()
     }
 
     return {
-        'planning': _sum_projects(planning_projects),
+        'planning': _sum_boms(planning_boms),
         'billed': {
-            'total': _sum_projects(billed_in_year),
+            'total': _sum_boms(won_boms),
             **billed_quarters,
         },
-        'lost': _sum_projects(lost_projects),
+        'lost': _sum_boms(lost_boms),
     }
