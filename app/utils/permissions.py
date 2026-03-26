@@ -252,8 +252,8 @@ def get_user_menu_items(user):
             'url':  'booking.index',
             'icon': 'fas fa-handshake',
             'submenu': [
-                {'name': '商機管理', 'url': 'booking.index'},
-                {'name': 'BOM 列表', 'url': 'bom.index'},
+                {'name': '商機報備', 'url': 'booking.index'},
+                {'name': '商機管理', 'url': 'bom.index'},
                 *kpi_submenu,
             ]
         })
