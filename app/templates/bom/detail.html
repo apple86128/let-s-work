@@ -234,6 +234,51 @@
                 <h6 class="mb-0"><i class="fas fa-calculator me-2 text-primary"></i>價格資訊</h6>
             </div>
             <div class="card-body p-3 small">
+
+                {% if current_user.has_role('sales') %}
+                {# ── Sales 專屬視圖：只顯示對業務有意義的欄位 ── #}
+
+                {# 計算不重複模組數量 #}
+                {% set ns = namespace(module_ids=[]) %}
+                {% for item in bom.items %}
+                    {% if item.function and item.function.module %}
+                        {% if item.function.module_id not in ns.module_ids %}
+                            {% set ns.module_ids = ns.module_ids + [item.function.module_id] %}
+                        {% endif %}
+                    {% endif %}
+                {% endfor %}
+
+                <div class="d-flex justify-content-between mb-1">
+                    <span class="text-muted">系統計算點數</span>
+                    <span>{{ bom.total_points }}</span>
+                </div>
+                {% if bom.custom_points is not none %}
+                <div class="d-flex justify-content-between mb-1">
+                    <span class="text-muted">最終購買點數</span>
+                    <span class="text-warning fw-semibold">{{ bom.custom_points }}</span>
+                </div>
+                {% endif %}
+                <div class="d-flex justify-content-between mb-1">
+                    <span class="text-muted">購買模組總數</span>
+                    <span class="fw-semibold">{{ ns.module_ids | length }} 個</span>
+                </div>
+                {% if bom.final_price %}
+                <hr class="my-2">
+                <div class="d-flex justify-content-between mb-1">
+                    <span class="fw-semibold text-success">產品最終價格</span>
+                    <span class="fw-bold text-success fs-6">{{ '{:,}'.format(bom.final_price) }}</span>
+                </div>
+                {% endif %}
+                {% if bom.final_maintenance_price %}
+                <div class="d-flex justify-content-between mt-1">
+                    <span class="fw-semibold">人力最終價格</span>
+                    <span class="fw-bold">{{ '{:,}'.format(bom.final_maintenance_price) }}</span>
+                </div>
+                {% endif %}
+
+                {% else %}
+                {# ── Admin / PM 視圖：完整價格資訊（維持原樣）── #}
+
                 <div class="d-flex justify-content-between mb-1">
                     <span class="text-muted">系統計算點數</span>
                     <span>{{ bom.total_points }}</span>
@@ -280,8 +325,11 @@
                 {% endif %}
                 {% endif %}
                 {% endif %}
+
+                {% endif %}
+
             </div>
-        </div>
+        </div>        
 
         <!-- 負責業務 -->
         <div class="card border-0 shadow-sm mb-3">
