@@ -62,12 +62,14 @@
 </div>
 {% endmacro %}
 
-{# ── 巨集：分類統計卡片 ── #}
-{% macro stat_card(title, icon, color, data, show_note=None) %}
-<div class="card border-0 shadow-sm mb-3">
+{# ── 巨集：分類統計卡片（可點擊展開 Modal）── #}
+{% macro stat_card(title, icon, color, data, show_note=None, segment=None) %}
+<div class="card border-0 shadow-sm mb-3 {% if segment %}kpi-block{% endif %}"
+     {% if segment %}style="cursor:pointer" data-segment="{{ segment }}" data-title="{{ title }}"{% endif %}>
     <div class="card-header bg-{{ color }} bg-opacity-10 border-bottom d-flex justify-content-between align-items-center">
         <h6 class="mb-0 text-{{ color }}">
             <i class="{{ icon }} me-2"></i>{{ title }}
+            {% if segment %}<small class="text-muted fw-normal ms-2" style="font-size:0.7rem">點擊查看明細</small>{% endif %}
         </h6>
         <span class="badge bg-{{ color }}">{{ data.count }} 件</span>
     </div>
@@ -146,7 +148,8 @@
     'fas fa-hourglass-half',
     'secondary',
     stats.planning,
-    '尚未入帳，不列入達成率計算'
+    '尚未入帳，不列入達成率計算',
+    'planning'
 ) }}
 
 {# ══════════════════════════════════
@@ -161,8 +164,11 @@
     </div>
     <div class="card-body">
 
-        {# 全年合計列 #}
-        <div class="row text-center g-2 mb-3 pb-3 border-bottom">
+        {# 全年合計列（可點擊） #}
+        <div class="row text-center g-2 mb-3 pb-3 border-bottom kpi-block"
+             style="cursor:pointer"
+             data-segment="billed_total"
+             data-title="已入帳（全年合計）">
             <div class="col-12 col-md-3">
                 <div class="text-muted small mb-1">全年件數</div>
                 <div class="fw-bold fs-5">{{ stats.billed.total.count }}</div>
@@ -189,7 +195,10 @@
                                        ('q3','Q3 七月~九月'), ('q4','Q4 十月~十二月')] %}
             {% set q_data = stats.billed[q_key] %}
             <div class="col-12 col-md-6">
-                <div class="card border bg-light">
+                <div class="card border bg-light kpi-block"
+                     style="cursor:pointer"
+                     data-segment="billed_{{ q_key }}"
+                     data-title="已入帳（{{ q_label }}）">
                     <div class="card-body py-2 px-3">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <span class="fw-semibold small">{{ q_label }}</span>
@@ -230,10 +239,90 @@
     'fas fa-times-circle',
     'danger',
     stats.lost,
-    '已終結商機，不列入達成率計算'
+    '已終結商機，不列入達成率計算',
+    'lost'
 ) }}
 
+{# ══════════════════════════════════
+   BOM 明細 Modal
+══════════════════════════════════ #}
+<div class="modal fade" id="kpiDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable" style="max-width: 80vw; width: 80vw;">
+        <div class="modal-content">
 
+            <div class="modal-header">
+                <h5 class="modal-title" id="kpiDetailModalLabel">
+                    <i class="fas fa-list me-2 text-primary"></i>
+                    <span id="modal-title-text">BOM 明細</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body p-0">
+                <!-- 載入中 -->
+                <div id="modal-loading" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="mt-2 text-muted small">載入中...</div>
+                </div>
+                <!-- 明細表格 -->
+                <div id="modal-content" class="d-none">
+                    <!-- 小計列 -->
+                    <div class="px-4 py-3 bg-light border-bottom d-flex flex-wrap gap-4">
+                        <div>
+                            <span class="text-muted small">件數</span>
+                            <span class="fw-bold ms-2" id="summary-count">-</span>
+                        </div>
+                        <div>
+                            <span class="text-muted small">產品金額合計</span>
+                            <span class="fw-bold text-primary ms-2" id="summary-product">-</span>
+                        </div>
+                        <div>
+                            <span class="text-muted small">人力金額合計</span>
+                            <span class="fw-bold text-success ms-2" id="summary-labor">-</span>
+                        </div>
+                        <div>
+                            <span class="text-muted small">總計</span>
+                            <span class="fw-bold text-dark ms-2" id="summary-total">-</span>
+                        </div>
+                    </div>
+                    <!-- 表格 -->
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0 small">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th>BOM 編號</th>
+                                    <th>客戶公司</th>
+                                    <th>專案名稱</th>
+                                    <th class="text-end">產品金額</th>
+                                    <th class="text-end">人力金額</th>
+                                    <th class="text-end">合計</th>
+                                    <th>負責業務</th>
+                                    <th>專案狀態</th>
+                                    <th>入帳日期</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="modal-table-body"></tbody>
+                        </table>
+                    </div>
+                    <!-- 無資料 -->
+                    <div id="modal-empty" class="text-center text-muted py-5 d-none">
+                        <i class="fas fa-inbox fa-2x mb-2"></i>
+                        <div>此區塊目前沒有資料</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-success" id="btn-export">
+                    <i class="fas fa-download me-1"></i>下載 CSV 報表
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">關閉</button>
+            </div>
+
+        </div>
+    </div>
+</div>
 {# ══════════════════════════════════
    目標設定 Modal（admin/pm only）
 ══════════════════════════════════ #}
@@ -296,4 +385,96 @@
 </div>
 {% endif %}
 
+<script>
+(function () {
+    // 目前選取的 segment / year，供下載按鈕使用
+    var currentSegment = '';
+    var currentYear    = {{ year }};
+
+    function fmtMoney(val) {
+        return 'NT$ ' + Number(val).toLocaleString();
+    }
+
+    // 點擊任何 kpi-block 時觸發
+    document.querySelectorAll('.kpi-block').forEach(function (el) {
+        el.addEventListener('click', function () {
+            var segment = el.dataset.segment;
+            var title   = el.dataset.title;
+            openDetailModal(segment, title);
+        });
+    });
+
+    function openDetailModal(segment, title) {
+        currentSegment = segment;
+
+        // 重置 Modal 狀態
+        document.getElementById('modal-title-text').textContent = title;
+        document.getElementById('modal-loading').classList.remove('d-none');
+        document.getElementById('modal-content').classList.add('d-none');
+
+        var modal = new bootstrap.Modal(document.getElementById('kpiDetailModal'));
+        modal.show();
+
+        // AJAX 拉取明細
+        fetch('/kpi/api/detail?year=' + currentYear + '&segment=' + segment)
+            .then(function (res) { return res.json(); })
+            .then(function (data) { renderModal(data); })
+            .catch(function () {
+                document.getElementById('modal-loading').innerHTML =
+                    '<div class="text-danger py-5 text-center">載入失敗，請重試</div>';
+            });
+    }
+
+    function renderModal(data) {
+        document.getElementById('modal-loading').classList.add('d-none');
+        document.getElementById('modal-content').classList.remove('d-none');
+
+        var items = data.items || [];
+
+        // 小計
+        var totalProduct = items.reduce(function (s, b) { return s + b.final_price; }, 0);
+        var totalLabor   = items.reduce(function (s, b) { return s + b.final_maintenance_price; }, 0);
+        document.getElementById('summary-count').textContent   = items.length + ' 件';
+        document.getElementById('summary-product').textContent = fmtMoney(totalProduct);
+        document.getElementById('summary-labor').textContent   = fmtMoney(totalLabor);
+        document.getElementById('summary-total').textContent   = fmtMoney(totalProduct + totalLabor);
+
+        // 表格
+        var tbody = document.getElementById('modal-table-body');
+        var empty = document.getElementById('modal-empty');
+
+        tbody.innerHTML = '';
+
+        if (items.length === 0) {
+            empty.classList.remove('d-none');
+            return;
+        }
+
+        empty.classList.add('d-none');
+
+        items.forEach(function (b) {
+            var tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td><span class="badge bg-secondary">' + b.bom_number + '</span></td>' +
+                '<td class="fw-semibold">' + b.customer_company + '</td>' +
+                '<td>' + b.project_name + '</td>' +
+                '<td class="text-end text-primary">' + fmtMoney(b.final_price) + '</td>' +
+                '<td class="text-end text-success">' + fmtMoney(b.final_maintenance_price) + '</td>' +
+                '<td class="text-end fw-semibold">' + fmtMoney(b.total) + '</td>' +
+                '<td>' + b.sales_name + '</td>' +
+                '<td><span class="badge bg-info text-dark">' + b.project_status + '</span></td>' +
+                '<td>' + b.won_at + '</td>' +
+                '<td><a href="/bom/' + b.bom_id + '" target="_blank" class="btn btn-outline-primary btn-sm">' +
+                    '<i class="fas fa-external-link-alt"></i></a></td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    // 下載按鈕
+    document.getElementById('btn-export').addEventListener('click', function () {
+        if (!currentSegment) return;
+        window.location.href = '/kpi/api/export?year=' + currentYear + '&segment=' + currentSegment;
+    });
+})();
+</script>
 {% endblock %}

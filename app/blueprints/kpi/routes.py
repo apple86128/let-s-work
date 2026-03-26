@@ -121,7 +121,150 @@ def save_target():
     flash(f'{year} 年度目標已儲存', 'success')
     return redirect(url_for('kpi.dashboard', year=year))
 
+# ---------------------------------------------------------------------------
+# API：取得指定區塊的 BOM 明細（供 Modal 使用）
+# ---------------------------------------------------------------------------
 
+@kpi_bp.route('/api/detail')
+@login_required
+@permission_required('kpi_view')
+def api_detail():
+    """
+    回傳指定年度、指定區塊的 BOM 明細列表
+    segment 參數：planning / billed_total / billed_q1~q4 / lost
+    """
+    year    = request.args.get('year',    _current_year(), type=int)
+    segment = request.args.get('segment', 'planning')
+
+    boms = _get_segment_boms(year, segment)
+
+    return jsonify({
+        'year':    year,
+        'segment': segment,
+        'count':   len(boms),
+        'items': [{
+            'bom_number':      b.bom_number,
+            'bom_id':          b.id,
+            'customer_company': b.customer_company,
+            'project_name':    b.project_name,
+            'final_price':     b.final_price or 0,
+            'final_maintenance_price': b.final_maintenance_price or 0,
+            'total':           (b.final_price or 0) + (b.final_maintenance_price or 0),
+            'sales_name':      b.assigned_sales.name if b.assigned_sales else '-',
+            'project_status':  b.get_project_status_display(),
+            'won_at':          b.won_at.strftime('%Y-%m-%d') if b.won_at else '-',
+        } for b in boms],
+    })
+
+
+# ---------------------------------------------------------------------------
+# API：下載指定區塊的 CSV 報表
+# ---------------------------------------------------------------------------
+
+@kpi_bp.route('/api/export')
+@login_required
+@permission_required('kpi_view')
+def api_export():
+    """
+    下載指定年度、指定區塊的 BOM 明細 CSV
+    """
+    import csv, io
+    from flask import Response
+
+    year    = request.args.get('year',    _current_year(), type=int)
+    segment = request.args.get('segment', 'planning')
+
+    SEGMENT_LABELS = {
+        'planning':     'planning',
+        'billed_total': 'billed_all',
+        'billed_q1':    'billed_Q1',
+        'billed_q2':    'billed_Q2',
+        'billed_q3':    'billed_Q3',
+        'billed_q4':    'billed_Q4',
+        'lost':         'lost',
+    }
+
+    boms  = _get_segment_boms(year, segment)
+    label = SEGMENT_LABELS.get(segment, segment)
+
+    output = io.StringIO()
+    # 加上 BOM header 讓 Excel 正確辨識 UTF-8
+    output.write('\ufeff')
+    writer = csv.writer(output)
+
+    writer.writerow(['BOM 編號', '客戶公司', '專案名稱', '產品金額', '人力金額',
+                     '合計金額', '負責業務', '專案狀態', '入帳日期'])
+
+    for b in boms:
+        writer.writerow([
+            b.bom_number,
+            b.customer_company,
+            b.project_name,
+            b.final_price or 0,
+            b.final_maintenance_price or 0,
+            (b.final_price or 0) + (b.final_maintenance_price or 0),
+            b.assigned_sales.name if b.assigned_sales else '-',
+            b.get_project_status_display(),
+            b.won_at.strftime('%Y-%m-%d') if b.won_at else '-',
+        ])
+
+    filename = f'KPI_{year}_{label}.csv'
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv; charset=utf-8-sig',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+    )
+
+
+# ---------------------------------------------------------------------------
+# 工具：依 segment 取得對應 BOM 列表
+# ---------------------------------------------------------------------------
+
+def _get_segment_boms(year, segment):
+    """依 segment 參數回傳對應的 BOM 物件列表"""
+    from app.models.bom import BOM
+
+    PLANNING_STATUSES = ('none', 'poc', 'bidding')
+
+    QUARTER_MONTHS = {
+        'billed_q1': (1,  3),
+        'billed_q2': (4,  6),
+        'billed_q3': (7,  9),
+        'billed_q4': (10, 12),
+    }
+
+    if segment == 'planning':
+        return BOM.query.filter(
+            BOM.project_status.in_(PLANNING_STATUSES),
+            BOM.is_deleted == False,
+        ).order_by(BOM.created_at.desc()).all()
+
+    if segment == 'lost':
+        return BOM.query.filter(
+            BOM.project_status == 'closed',
+            BOM.is_deleted == False,
+        ).order_by(BOM.created_at.desc()).all()
+
+    # billed_total 或 billed_q1~q4
+    base_query = BOM.query.filter(
+        BOM.project_status == 'won',
+        BOM.won_at.isnot(None),
+        db.func.strftime('%Y', BOM.won_at) == str(year),
+        BOM.is_deleted == False,
+    )
+
+    if segment == 'billed_total':
+        return base_query.order_by(BOM.won_at.desc()).all()
+
+    if segment in QUARTER_MONTHS:
+        start_m, end_m = QUARTER_MONTHS[segment]
+        all_won = base_query.all()
+        return [
+            b for b in all_won
+            if b.won_at and start_m <= b.won_at.month <= end_m
+        ]
+
+    return []
 # ---------------------------------------------------------------------------
 # API：取得指定年度統計資料（供前端 AJAX 使用）
 # ---------------------------------------------------------------------------

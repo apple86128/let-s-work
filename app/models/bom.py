@@ -131,16 +131,20 @@ class BOM(db.Model):
         """回傳專案狀態對應的 Bootstrap 顏色字串"""
         return self.PROJECT_STATUS_COLOR.get(self.project_status, 'secondary')
 
-    def update_project_status(self, new_status, close_reason=None):
+    def update_project_status(self, new_status, close_reason=None, won_at=None):
         """
         更新專案狀態。
-        - 變更為 won 時自動記錄 won_at（供 KPI 季度歸屬使用）
+        - 變更為 won 時：優先使用傳入的 won_at，否則自動記錄當下時間
         - 從 won 切換到其他狀態時清除 won_at
         - 變更為 closed 時可附帶原因備註；其他狀態自動清除備註
         """
         self.project_status       = new_status
         self.project_close_reason = close_reason if new_status == 'closed' else None
-        self.won_at               = datetime.utcnow() if new_status == 'won' else None
+
+        if new_status == 'won':
+            self.won_at = won_at if won_at else datetime.utcnow()
+        else:
+            self.won_at = None
 
     # ── 其他既有方法 ─────────────────────────────────────────────────────────
 
@@ -207,6 +211,16 @@ class BOM(db.Model):
     def can_be_reviewed_by(self, user):
         """判斷使用者是否可以審核此 BOM"""
         return user.has_role('admin') or user.has_role('pm')
+    
+    def can_be_deleted_by(self, user):
+        """判斷使用者是否可以刪除此 BOM（僅 admin / pm）"""
+        return user.has_role('admin') or user.has_role('pm')
+
+    def soft_delete(self, user_id):
+        """軟刪除 BOM"""
+        self.is_deleted    = True
+        self.deleted_at    = datetime.utcnow()
+        self.deleted_by_id = user_id
 
     def approve(self, reviewer_id, notes=None, final_price=None,
                 discount_rate=None, final_maintenance_price=None,

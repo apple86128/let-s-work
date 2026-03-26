@@ -100,48 +100,69 @@
                                     <br><small class="text-muted">{{ item.notes }}</small>
                                     {% endif %}
                                 </td>
-                                <td class="text-center small text-muted">{{ item.function.unit_name }}</td>
-                                <td class="text-end small">{{ item.unit_points }}</td>
+                                <td class="text-center text-muted small">{{ item.function.unit_name }}</td>
+                                <td class="text-end">
+                                    <span class="badge bg-secondary">{{ item.unit_points }} pts</span>
+                                </td>
                                 <td class="text-end small">{{ item.quantity }}</td>
-                                <td class="text-end small fw-semibold">{{ item.total_points }}</td>
+                                <td class="text-end fw-semibold">{{ item.total_points }} pts</td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
                 {% endfor %}
+
+                {% if not bom_items_list %}
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-inbox fa-2x mb-2"></i>
+                    <div>尚無功能項目</div>
+                </div>
+                {% endif %}
+
+                <!-- 總計列 -->
+                {% if bom_items_list %}
+                <div class="px-3 py-2 bg-light d-flex justify-content-between align-items-center border-top">
+                    <span class="fw-semibold">系統計算總點數</span>
+                    <span class="badge bg-secondary fs-6">{{ bom.total_points }} pts</span>
+                </div>
+                {% if bom.custom_points is not none %}
+                <div class="px-3 py-2 d-flex justify-content-between align-items-center"
+                     style="background:#e7f1ff; border-top:1px solid #b6d4fe;">
+                    <span class="fw-semibold text-primary">
+                        <i class="fas fa-edit me-1"></i>最終下單點數
+                        <small class="text-muted fw-normal ms-1">（自訂）</small>
+                    </span>
+                    <span class="badge bg-primary fs-6">{{ bom.custom_points }} pts</span>
+                </div>
+                {% else %}
+                <div class="px-3 py-2 bg-primary bg-opacity-10 d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold text-primary">最終下單點數</span>
+                    <span class="badge bg-primary fs-6">{{ bom.total_points }} pts</span>
+                </div>
+                {% endif %}
+                {% endif %}
+
             </div>
         </div>
 
-        <!-- 審核意見 -->
-        {% if bom.review_notes %}
+        <!-- 審核資訊（已審核才顯示） -->
+        {% if bom.reviewed_at %}
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-header bg-white border-bottom">
-                <h6 class="mb-0"><i class="fas fa-comment-alt me-2"></i>審核意見</h6>
+                <h6 class="mb-0"><i class="fas fa-clipboard-check me-2 text-{{ bom.get_status_color() }}"></i>審核記錄</h6>
             </div>
             <div class="card-body">
-                <p class="mb-1">{{ bom.review_notes }}</p>
-                {% if bom.reviewed_by %}
-                <small class="text-muted">
-                    — {{ bom.reviewed_by.name }}
-                    {% if bom.reviewed_at %}
-                    於 {{ bom.reviewed_at.strftime('%Y-%m-%d %H:%M') }}
+                <dl class="row mb-0 small">
+                    <dt class="col-sm-3 text-muted">審核人員</dt>
+                    <dd class="col-sm-9">{{ bom.reviewed_by.name if bom.reviewed_by else '-' }}</dd>
+                    <dt class="col-sm-3 text-muted">審核時間</dt>
+                    <dd class="col-sm-9">{{ bom.reviewed_at.strftime('%Y-%m-%d %H:%M') }}</dd>
+                    {% if bom.review_notes %}
+                    <dt class="col-sm-3 text-muted">審核意見</dt>
+                    <dd class="col-sm-9">{{ bom.review_notes }}</dd>
                     {% endif %}
-                </small>
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- 審核入口（admin/pm） -->
-        {% if bom.can_be_reviewed_by(current_user) and bom.status == 'pending' %}
-        <div class="alert alert-warning d-flex align-items-center gap-3">
-            <i class="fas fa-gavel fa-lg text-warning"></i>
-            <div>
-                此 BOM 待審核，
-                <a href="{{ url_for('bom.review', bom_id=bom.id) }}" class="fw-semibold">
-                    點此進行審核
-                </a>
+                </dl>
             </div>
         </div>
         {% endif %}
@@ -151,13 +172,11 @@
     <!-- 右欄：側邊資訊 -->
     <div class="col-lg-4">
 
-        <!-- 專案狀態卡片（新增）-->
+        <!-- 專案狀態管理（admin/pm 可操作） -->
         {% if current_user.has_role('admin') or current_user.has_role('pm') %}
         <div class="card border-0 shadow-sm mb-3">
             <div class="card-header bg-white border-bottom">
-                <h6 class="mb-0">
-                    <i class="fas fa-tasks me-2 text-info"></i>專案狀態
-                </h6>
+                <h6 class="mb-0"><i class="fas fa-project-diagram me-2 text-info"></i>專案狀態管理</h6>
             </div>
             <div class="card-body p-3">
 
@@ -169,6 +188,11 @@
                     {% if bom.project_status == 'closed' and bom.project_close_reason %}
                     <div class="mt-2 small text-muted border-start border-2 ps-2">
                         {{ bom.project_close_reason }}
+                    </div>
+                    {% endif %}
+                    {% if bom.project_status == 'won' and bom.won_at %}
+                    <div class="mt-2 small text-muted">
+                        <i class="fas fa-calendar-check me-1"></i>入帳日期：{{ bom.won_at.strftime('%Y-%m-%d') }}
                     </div>
                     {% endif %}
                 </div>
@@ -191,6 +215,16 @@
                         </select>
                     </div>
 
+                    <!-- 入帳日期（只有選 won 才顯示）-->
+                    <div class="mb-2" id="won-at-block"
+                         style="{{ '' if bom.project_status == 'won' else 'display:none' }}">
+                        <label class="form-label small fw-semibold mb-1">
+                            入帳日期 <span class="text-muted fw-normal">（留空使用今日）</span>
+                        </label>
+                        <input type="date" class="form-control form-control-sm" name="won_at"
+                               value="{{ bom.won_at.strftime('%Y-%m-%d') if bom.won_at else '' }}">
+                    </div>
+
                     <!-- 終結原因（只有選 closed 才顯示）-->
                     <div class="mb-2" id="close-reason-block"
                          style="{{ '' if bom.project_status == 'closed' else 'display:none' }}">
@@ -207,6 +241,7 @@
                 </form>
             </div>
         </div>
+
         {% else %}
         <!-- Sales 等其他角色：只顯示狀態，不顯示操作 -->
         {% if bom.project_status and bom.project_status != 'none' %}
@@ -277,7 +312,7 @@
                 {% endif %}
 
                 {% else %}
-                {# ── Admin / PM 視圖：完整價格資訊（維持原樣）── #}
+                {# ── Admin / PM 視圖：完整價格資訊 ── #}
 
                 <div class="d-flex justify-content-between mb-1">
                     <span class="text-muted">系統計算點數</span>
@@ -329,7 +364,7 @@
                 {% endif %}
 
             </div>
-        </div>        
+        </div>
 
         <!-- 負責業務 -->
         <div class="card border-0 shadow-sm mb-3">
@@ -396,13 +431,15 @@
 
 {% block extra_js %}
 <script>
-// 選擇「已終結」時才顯示原因備註欄
+// 依選擇的狀態控制欄位顯示
 const select      = document.getElementById('project-status-select');
+const wonAtBlock  = document.getElementById('won-at-block');
 const reasonBlock = document.getElementById('close-reason-block');
 
-if (select && reasonBlock) {
+if (select) {
     select.addEventListener('change', function () {
-        reasonBlock.style.display = this.value === 'closed' ? '' : 'none';
+        if (wonAtBlock)  wonAtBlock.style.display  = this.value === 'won'    ? '' : 'none';
+        if (reasonBlock) reasonBlock.style.display = this.value === 'closed' ? '' : 'none';
     });
 }
 </script>

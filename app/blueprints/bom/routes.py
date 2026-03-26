@@ -1,3 +1,4 @@
+from datetime import datetime
 from flask import render_template, request, flash, redirect, url_for, jsonify
 from flask_login import login_required, current_user
 
@@ -114,7 +115,7 @@ def index():
     status_filter         = request.args.get('status', '')
     source_filter         = request.args.get('source', '')
     search_query          = request.args.get('search', '')
-    project_status_filter = request.args.get('project_status', '')  # 新增：專案狀態篩選
+    project_status_filter = request.args.get('project_status', '')
     per_page              = 20
 
     query = get_boms_for_user(current_user)
@@ -137,7 +138,6 @@ def index():
     boms  = query.paginate(page=page, per_page=per_page, error_out=False)
     stats = get_bom_statistics_for_user(current_user)
 
-    # 專案狀態統計（依角色範圍，與審核統計一致）
     project_stats = _get_project_status_stats(current_user)
 
     return render_template('bom/list.html',
@@ -229,10 +229,6 @@ def create():
     custom_points_raw = request.form.get('custom_points', '').strip()
     custom_points     = int(custom_points_raw) if custom_points_raw.isdigit() else None
 
-    assigned_id = current_user.id
-    if can_assign:
-        assigned_id = request.form.get('assigned_sales_id', type=int) or current_user.id
-
     if not company or not project_name or not plan_type or not plan_years or not function_ids:
         flash('請填寫所有必填欄位並至少選擇一個功能', 'warning')
         return render_template('bom/form.html',
@@ -242,24 +238,7 @@ def create():
                                modules=modules,
                                sales_users=sales_users)
 
-    # 驗證數量
-    errors = []
-    for i, qty_str in enumerate(quantities):
-        try:
-            if int(qty_str) <= 0:
-                errors.append(f'第 {i+1} 個功能的數量必須大於 0')
-        except (ValueError, TypeError):
-            errors.append(f'第 {i+1} 個功能的數量格式不正確')
-
-    if errors:
-        for msg in errors:
-            flash(msg, 'warning')
-        return render_template('bom/form.html',
-                               bom=None,
-                               source_type=source_type,
-                               booking=booking,
-                               modules=modules,
-                               sales_users=sales_users)
+    assigned_sales_id = request.form.get('assigned_sales_id', type=int) if can_assign else None
 
     new_bom = BOM(
         customer_company    = company,
@@ -269,13 +248,12 @@ def create():
         project_description = request.form.get('project_description', '').strip() or None,
         plan_type           = plan_type,
         plan_years          = plan_years,
-        source_type         = source_type,
-        booking_id          = booking_id,
         created_by_id       = current_user.id,
-        assigned_sales_id   = assigned_id,
+        source_type         = request.form.get('source_type', source_type),
+        booking_id          = request.form.get('booking_id', type=int),
+        assigned_sales_id   = assigned_sales_id,
     )
     new_bom.custom_points = custom_points
-
     db.session.add(new_bom)
     db.session.flush()
 
@@ -482,7 +460,7 @@ def review(bom_id):
 
 
 # ---------------------------------------------------------------------------
-# 更新專案狀態（新增）
+# 更新專案狀態
 # ---------------------------------------------------------------------------
 
 @bom_bp.route('/<int:bom_id>/project-status', methods=['POST'])
@@ -493,16 +471,25 @@ def update_project_status(bom_id):
         flash('您沒有權限變更專案狀態', 'danger')
         return redirect(url_for('bom.detail', bom_id=bom_id))
 
-    bom        = BOM.query.get_or_404(bom_id)
-    new_status = request.form.get('project_status', '').strip()
+    bom          = BOM.query.get_or_404(bom_id)
+    new_status   = request.form.get('project_status', '').strip()
     close_reason = request.form.get('project_close_reason', '').strip() or None
+    won_at_str   = request.form.get('won_at', '').strip()
 
     valid_statuses = list(BOM.PROJECT_STATUS_DISPLAY.keys())
     if new_status not in valid_statuses:
         flash('無效的專案狀態', 'danger')
         return redirect(url_for('bom.detail', bom_id=bom_id))
 
-    bom.update_project_status(new_status, close_reason=close_reason)
+    # 解析自訂入帳日期（格式 YYYY-MM-DD），解析失敗則用當下時間
+    won_at = None
+    if new_status == 'won' and won_at_str:
+        try:
+            won_at = datetime.strptime(won_at_str, '%Y-%m-%d')
+        except ValueError:
+            won_at = None
+
+    bom.update_project_status(new_status, close_reason=close_reason, won_at=won_at)
     db.session.commit()
 
     flash(f'專案狀態已更新為「{bom.get_project_status_display()}」', 'success')
@@ -638,9 +625,9 @@ def api_calculate_price():
     suggested   = base_price * plan_years if plan_type == 'yearly' else base_price
 
     return jsonify({
-        'total_points':    total_points,
-        'billing_points':  billing_points,
-        'modules_cost':    modules_cost,
-        'points_cost':     points_cost,
-        'suggested_price': int(suggested),
+        'suggested_points': total_points,
+        'billing_points':   billing_points,
+        'modules_cost':     modules_cost,
+        'points_cost':      points_cost,
+        'suggested_price':  int(suggested),
     })
