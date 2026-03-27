@@ -76,6 +76,45 @@ def _calculate_bom_pricing(bom):
     }
 
 
+def _auto_create_contract(bom):
+    """
+    BOM 狀態變更為 won 時，自動建立空白合約記錄。
+    若公司帳戶不存在則一併建立；若合約已存在則跳過。
+    回傳 (account, contract)，contract 為 None 表示已存在未重複建立。
+    """
+    account = CustomerAccount.query.filter_by(
+        company_name=bom.customer_company
+    ).first()
+
+    if not account:
+        booking = bom.booking if bom.booking_id else None
+        account = CustomerAccount(
+            company_name   = bom.customer_company,
+            company_tax_id = booking.company_tax_id if booking else None,
+            contact_person = booking.contact_person  if booking else None,
+            contact_phone  = booking.contact_phone   if booking else None,
+            contact_email  = booking.contact_email   if booking else None,
+        )
+        db.session.add(account)
+        db.session.flush()   # 取得 account.id，尚未 commit
+
+    existing = AccountContract.query.filter_by(
+        account_id = account.id,
+        bom_id     = bom.id,
+    ).first()
+
+    if existing:
+        return account, None   # 已存在，不重複建立
+
+    contract = AccountContract(
+        account_id    = account.id,
+        bom_id        = bom.id,
+        contract_type = 'new',
+    )
+    db.session.add(contract)
+    return account, contract
+
+
 # ---------------------------------------------------------------------------
 # 專案狀態統計工具函數
 # ---------------------------------------------------------------------------
@@ -85,15 +124,8 @@ def _get_project_status_stats(user):
     計算各專案狀態的 BOM 件數，依角色範圍篩選：
       - admin / pm：全部 BOM
       - sales：只計算自己負責的 BOM
-    回傳結構：
-    {
-        'none':       int,  # 未設定
-        'in_progress': int, # POC + 備標中（合併顯示）
-        'won':        int,  # 已成案
-        'closed':     int,  # 已終結
-    }
     """
-    base = get_boms_for_user(user)  # 已依角色過濾，回傳 Query
+    base = get_boms_for_user(user)
 
     return {
         'none':        base.filter(BOM.project_status == 'none').count(),
@@ -471,17 +503,17 @@ def update_project_status(bom_id):
     if not (current_user.has_role('admin') or current_user.has_role('pm')):
         flash('您沒有權限變更專案狀態', 'danger')
         return redirect(url_for('bom.detail', bom_id=bom_id))
- 
+
     bom          = BOM.query.get_or_404(bom_id)
     new_status   = request.form.get('project_status', '').strip()
     close_reason = request.form.get('project_close_reason', '').strip() or None
     won_at_str   = request.form.get('won_at', '').strip()
- 
+
     valid_statuses = list(BOM.PROJECT_STATUS_DISPLAY.keys())
     if new_status not in valid_statuses:
         flash('無效的專案狀態', 'danger')
         return redirect(url_for('bom.detail', bom_id=bom_id))
- 
+
     # 解析自訂入帳日期（格式 YYYY-MM-DD），解析失敗則用當下時間
     won_at = None
     if new_status == 'won' and won_at_str:
@@ -489,20 +521,20 @@ def update_project_status(bom_id):
             won_at = datetime.strptime(won_at_str, '%Y-%m-%d')
         except ValueError:
             won_at = None
- 
+
     bom.update_project_status(new_status, close_reason=close_reason, won_at=won_at)
- 
+
     # 狀態變更為 won 時，自動建立客戶帳戶與空白合約
     contract_created = False
     account          = None
     if new_status == 'won':
         account, contract = _auto_create_contract(bom)
         contract_created  = contract is not None
- 
+
     db.session.commit()
- 
+
     flash(f'專案狀態已更新為「{bom.get_project_status_display()}」', 'success')
- 
+
     if contract_created:
         flash(
             f'已自動建立合約記錄，請前往「客戶營運管理」填寫授權資訊。'
@@ -510,8 +542,9 @@ def update_project_status(bom_id):
             f' class="alert-link">前往查看</a>',
             'info'
         )
- 
+
     return redirect(url_for('bom.detail', bom_id=bom_id))
+
 
 # ---------------------------------------------------------------------------
 # 刪除
