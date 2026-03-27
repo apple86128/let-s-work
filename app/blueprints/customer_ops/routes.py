@@ -163,16 +163,23 @@ def create_contract(account_id):
 
     # 取得該帳戶尚未建立合約的已批准 BOM
     from app.models.bom import BOM
+    # account.contracts 已排除軟刪除合約（model 層 primaryjoin 控制）
+    # 退回的合約不會佔用 BOM，該 BOM 可重新被選取
     linked_bom_ids = {c.bom_id for c in account.contracts if c.bom_id}
+
+    # 可選 BOM：專案狀態為「已成案（won）」且未被有效合約關聯
     available_boms = BOM.query.filter(
         BOM.customer_company == account.company_name,
-        BOM.status == 'approved',
-        BOM.is_deleted == False,
+        BOM.project_status   == 'won',
+        BOM.is_deleted       == False,
         BOM.id.notin_(linked_bom_ids)
-    ).all()
+    ).order_by(BOM.created_at.desc()).all()
 
     # 現有合約（供選擇上一張合約，即續約來源）
-    existing_contracts = AccountContract.query.filter_by(account_id=account_id).all()
+    existing_contracts = AccountContract.query.filter(
+        AccountContract.account_id == account_id,
+        AccountContract.is_deleted == False
+    ).all()
 
     if request.method == 'GET':
         return render_template('customer_ops/contract_form.html',
@@ -236,7 +243,8 @@ def edit_contract(account_id, contract_id):
 
     existing_contracts = AccountContract.query.filter(
         AccountContract.account_id == account_id,
-        AccountContract.id != contract_id
+        AccountContract.id         != contract_id,
+        AccountContract.is_deleted == False
     ).all()
 
     if request.method == 'GET':
@@ -256,6 +264,70 @@ def edit_contract(account_id, contract_id):
 
     db.session.commit()
     flash('合約已更新', 'success')
+    return redirect(url_for('customer_ops.contract_detail',
+                            account_id=account_id,
+                            contract_id=contract_id))
+
+@customer_ops_bp.route('/<int:account_id>/contracts/<int:contract_id>/return',
+                        methods=['POST'])
+@login_required
+def return_contract(account_id, contract_id):
+    """退回合約（軟刪除）— admin / pm 專用
+    
+    執行後合約記錄保留但標記為已刪除，
+    讓同一張 BOM 可從客戶頁面手動重新建立合約。
+    """
+    if not (current_user.has_role('admin') or current_user.has_role('pm')):
+        flash('您沒有權限退回合約', 'danger')
+        return redirect(url_for('customer_ops.contract_detail',
+                                account_id=account_id,
+                                contract_id=contract_id))
+
+    contract = AccountContract.query.get_or_404(contract_id)
+
+    if contract.account_id != account_id:
+        flash('合約不屬於此客戶帳戶', 'danger')
+        return redirect(url_for('customer_ops.detail', account_id=account_id))
+
+    if contract.is_deleted:
+        flash('此合約已經退回，無法重複操作', 'warning')
+        return redirect(url_for('customer_ops.detail', account_id=account_id))
+
+    contract.soft_delete(current_user.id)
+    db.session.commit()
+
+    flash(f'合約已退回，可從客戶頁面重新建立合約並選擇對應 BOM', 'success')
+    return redirect(url_for('customer_ops.detail', account_id=account_id))
+
+@customer_ops_bp.route('/<int:account_id>/contracts/<int:contract_id>/unlink-bom',
+                        methods=['POST'])
+@login_required
+def unlink_bom(account_id, contract_id):
+    """解除合約與 BOM 的關聯（admin / pm 專用）"""
+    if not (current_user.has_role('admin') or current_user.has_role('pm')):
+        flash('您沒有權限執行此操作', 'danger')
+        return redirect(url_for('customer_ops.contract_detail',
+                                account_id=account_id,
+                                contract_id=contract_id))
+
+    contract = AccountContract.query.get_or_404(contract_id)
+
+    if contract.account_id != account_id:
+        flash('合約不屬於此客戶帳戶', 'danger')
+        return redirect(url_for('customer_ops.detail', account_id=account_id))
+
+    if not contract.bom_id:
+        flash('此合約目前未關聯任何 BOM', 'warning')
+        return redirect(url_for('customer_ops.contract_detail',
+                                account_id=account_id,
+                                contract_id=contract_id))
+
+    # 解除關聯：清空 bom_id
+    bom_number     = contract.source_bom.bom_number if contract.source_bom else '（未知）'
+    contract.bom_id = None
+    db.session.commit()
+
+    flash(f'已解除與 BOM {bom_number} 的關聯', 'success')
     return redirect(url_for('customer_ops.contract_detail',
                             account_id=account_id,
                             contract_id=contract_id))

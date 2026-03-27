@@ -100,16 +100,19 @@
                         {% endif %}
                     </dd>
 
-                    {% if contract.source_bom %}
+                    <!-- 來源 BOM -->
                     <dt class="col-sm-4 text-muted">來源 BOM</dt>
                     <dd class="col-sm-8">
+                        {% if contract.source_bom %}
                         <a href="{{ url_for('bom.detail', bom_id=contract.source_bom.id) }}"
-                           class="text-decoration-none">
+                           class="text-decoration-none fw-semibold">
                             {{ contract.source_bom.bom_number }}
                         </a>
                         <span class="text-muted small ms-1">{{ contract.source_bom.project_name }}</span>
+                        {% else %}
+                        <span class="text-muted">—（未關聯 BOM）</span>
+                        {% endif %}
                     </dd>
-                    {% endif %}
 
                 </dl>
             </div>
@@ -132,7 +135,6 @@
             </div>
             <div class="card-body">
                 {% if contract.license_request_code %}
-                <!-- 預覽：僅顯示前 100 字元 -->
                 <div class="p-3 rounded bg-light font-monospace small text-break mb-2"
                      style="max-height: 80px; overflow: hidden; position: relative;">
                     {{ contract.license_request_code[:100] }}
@@ -140,11 +142,9 @@
                     <span class="text-muted">... （共 {{ contract.license_request_code | length }} 字元）</span>
                     {% endif %}
                 </div>
-                <!-- 完整 KEY 隱藏於此，供複製使用 -->
                 <div id="request-key-content" class="d-none">{{ contract.license_request_code }}</div>
                 <div class="text-muted small">
-                    <i class="fas fa-info-circle me-1"></i>
-                    點擊「複製」按鈕可取得完整 KEY
+                    <i class="fas fa-info-circle me-1"></i>點擊「複製」按鈕可取得完整 KEY
                 </div>
                 {% else %}
                 <div class="text-muted text-center py-3">
@@ -171,7 +171,6 @@
             </div>
             <div class="card-body">
                 {% if contract.license_issue_code %}
-                <!-- 預覽：僅顯示前 100 字元 -->
                 <div class="p-3 rounded bg-light font-monospace small text-break mb-2"
                      style="max-height: 80px; overflow: hidden; position: relative;">
                     {{ contract.license_issue_code[:100] }}
@@ -179,11 +178,9 @@
                     <span class="text-muted">... （共 {{ contract.license_issue_code | length }} 字元）</span>
                     {% endif %}
                 </div>
-                <!-- 完整 KEY 隱藏於此，供複製使用 -->
                 <div id="issue-key-content" class="d-none">{{ contract.license_issue_code }}</div>
                 <div class="text-muted small">
-                    <i class="fas fa-info-circle me-1"></i>
-                    點擊「複製」按鈕可取得完整 KEY
+                    <i class="fas fa-info-circle me-1"></i>點擊「複製」按鈕可取得完整 KEY
                 </div>
                 {% else %}
                 <div class="text-muted text-center py-3">
@@ -193,10 +190,37 @@
             </div>
         </div>
 
+        <!-- 退回合約（admin / pm 專用） -->
+        {% if current_user.has_role('admin') or current_user.has_role('pm') %}
+        <div class="card border-0 shadow-sm mb-4" style="border-color: rgba(220,53,69,0.3) !important;">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0 text-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>危險操作
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+                    <div>
+                        <div class="fw-semibold small mb-1">退回此合約</div>
+                        <div class="text-muted small">
+                            合約記錄將從列表中移除（軟刪除保留歷史）。<br>
+                            若需重新建立，請從客戶頁面手動新增合約並選擇對應 BOM。
+                        </div>
+                    </div>
+                    <button type="button"
+                            class="btn btn-outline-danger btn-sm flex-shrink-0"
+                            onclick="confirmReturn()">
+                        <i class="fas fa-undo me-1"></i>退回此合約
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
     </div>
 
     <!-- ══════════════════════════════════════════
-         右欄：續約鏈 + 側邊資訊
+         右欄：狀態卡 + 完整度 + 續約鏈 + 建立時間
     ══════════════════════════════════════════ -->
     <div class="col-lg-4">
 
@@ -220,8 +244,7 @@
                 {% endif %}
                 {% if contract.is_expiring_soon %}
                 <div class="alert alert-warning mt-3 mb-0 py-2 small">
-                    <i class="fas fa-exclamation-triangle me-1"></i>
-                    即將到期，請安排續約
+                    <i class="fas fa-exclamation-triangle me-1"></i>即將到期，請安排續約
                 </div>
                 {% endif %}
             </div>
@@ -278,15 +301,14 @@
                 <ul class="list-unstyled mb-0">
                     {% for c in renewal_chain %}
                     <li class="d-flex align-items-start gap-2 mb-2">
-                        <!-- 時間軸連接線 -->
                         <div class="d-flex flex-column align-items-center" style="min-width: 20px;">
                             <div class="rounded-circle bg-{{ c.status_color }}"
                                  style="width:10px; height:10px; margin-top:4px;"></div>
                             {% if not loop.last %}
-                            <div class="bg-secondary" style="width:2px; flex:1; min-height:20px; margin-top:2px;"></div>
+                            <div class="bg-secondary"
+                                 style="width:2px; flex:1; min-height:20px; margin-top:2px;"></div>
                             {% endif %}
                         </div>
-                        <!-- 合約資訊 -->
                         <div class="flex-grow-1 small">
                             {% if c.id == contract.id %}
                             <span class="fw-bold text-primary">
@@ -308,7 +330,6 @@
                                 {% endif %}
                             </div>
                         </div>
-                        <!-- 狀態 -->
                         <span class="badge bg-{{ c.status_color }}" style="font-size:10px;">
                             {{ c.status_label }}
                         </span>
@@ -324,9 +345,7 @@
             <div class="card-body p-3">
                 <dl class="row mb-0 small">
                     <dt class="col-5 text-muted">建立時間</dt>
-                    <dd class="col-7">
-                        {{ contract.created_at.strftime('%Y-%m-%d %H:%M') }}
-                    </dd>
+                    <dd class="col-7">{{ contract.created_at.strftime('%Y-%m-%d %H:%M') }}</dd>
                     <dt class="col-5 text-muted">最後更新</dt>
                     <dd class="col-7">
                         {{ contract.updated_at.strftime('%Y-%m-%d %H:%M') if contract.updated_at else '—' }}
@@ -337,14 +356,24 @@
 
     </div>
 </div>
+
+<!-- 退回合約確認表單（隱藏，由 JS 觸發送出） -->
+{% if current_user.has_role('admin') or current_user.has_role('pm') %}
+<form id="return-contract-form"
+      method="POST"
+      action="{{ url_for('customer_ops.return_contract',
+                         account_id=account.id,
+                         contract_id=contract.id) }}"
+      class="d-none">
+</form>
+{% endif %}
+
 {% endblock %}
 
 {% block extra_js %}
 <script>
 /**
  * 複製完整 KEY 到剪貼簿
- * @param {string} elementId - 含完整 KEY 文字的隱藏元素 ID
- * @param {HTMLElement} btn   - 觸發按鈕，複製後短暫變色提示
  */
 function copyKey(elementId, btn) {
     const content = document.getElementById(elementId);
@@ -355,15 +384,28 @@ function copyKey(elementId, btn) {
             const original = btn.innerHTML;
             btn.innerHTML  = '<i class="fas fa-check me-1"></i>已複製';
             btn.classList.replace('btn-outline-secondary', 'btn-success');
-
             setTimeout(() => {
                 btn.innerHTML = original;
                 btn.classList.replace('btn-success', 'btn-outline-secondary');
             }, 2000);
         })
-        .catch(() => {
-            alert('複製失敗，請手動選取並複製');
-        });
+        .catch(() => alert('複製失敗，請手動選取並複製'));
+}
+
+/**
+ * 退回合約確認提示
+ * 確認後 submit 隱藏表單，執行軟刪除並導回客戶頁面
+ */
+function confirmReturn() {
+    const contractNo = "{{ contract.contract_number or '（未填代號）' }}";
+    if (!confirm(
+        '確定要退回合約「' + contractNo + '」？\n\n' +
+        '合約記錄將從列表中移除。\n' +
+        '若需重新建立，請從客戶頁面手動新增合約。'
+    )) {
+        return;
+    }
+    document.getElementById('return-contract-form').submit();
 }
 </script>
 {% endblock %}

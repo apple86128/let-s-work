@@ -27,13 +27,20 @@ class CustomerAccount(db.Model):
     updated_at      = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # --- 關聯 ---
-    contracts       = db.relationship(
+    # contracts_all：載入全部合約（含軟刪除），負責 ORM cascade / 寫入
+    # contracts    ：property，對外永遠只回傳未軟刪除的合約
+    contracts_all = db.relationship(
         'AccountContract',
         backref='account',
         lazy=True,
         foreign_keys='AccountContract.account_id',
         cascade='all, delete-orphan'
     )
+
+    @property
+    def contracts(self):
+        """對外介面：只回傳未被軟刪除的合約"""
+        return [c for c in self.contracts_all if not c.is_deleted]
 
     def __init__(self, company_name, company_tax_id=None,
                  contact_person=None, contact_phone=None,
@@ -49,44 +56,45 @@ class CustomerAccount(db.Model):
     # Dashboard 統計：授權金額 / 人力金額（從關聯 BOM 加總）
     # -------------------------------------------------------------------------
 
-    def _approved_boms(self):
-        """取得所有已批准且未刪除的關聯 BOM"""
+    def _won_boms(self):
+        """取得所有專案狀態為「已成案」且未刪除的關聯 BOM
+        貢獻計算以 project_status == 'won' 為準，而非審核狀態"""
         from app.models.bom import BOM
         return BOM.query.filter(
             BOM.customer_company == self.company_name,
-            BOM.status == 'approved',
-            BOM.is_deleted == False
+            BOM.project_status   == 'won',
+            BOM.is_deleted       == False
         ).all()
 
     @property
     def total_license_value(self):
-        """授權金額總計（BOM final_price，不含人力）"""
+        """授權金額總計（BOM final_price，不含人力），僅計入已成案（won）的 BOM"""
         return sum(
             (b.final_price or b.suggested_price or 0)
-            for b in self._approved_boms()
+            for b in self._won_boms()
         )
 
     @property
     def total_labor_value(self):
-        """人力服務金額總計（BOM final_maintenance_price）"""
+        """人力服務金額總計（BOM final_maintenance_price），僅計入已成案（won）的 BOM"""
         return sum(
             (b.final_maintenance_price or b.labor_suggested_price or 0)
-            for b in self._approved_boms()
+            for b in self._won_boms()
         )
 
     @property
     def total_contribution(self):
-        """累積貢獻總值"""
+        """累積貢獻總值（授權 + 人力）"""
         return self.total_license_value + self.total_labor_value
 
     @property
     def active_contracts(self):
-        """有效合約列表"""
+        """有效合約列表（自動透過 contracts property 排除軟刪除）"""
         return [c for c in self.contracts if c.status == 'active']
 
     @property
     def expiring_soon_contracts(self):
-        """30 天內即將到期的合約"""
+        """30 天內即將到期的合約（自動透過 contracts property 排除軟刪除）"""
         threshold = date.today() + timedelta(days=30)
         return [
             c for c in self.contracts
@@ -111,21 +119,21 @@ class AccountContract(db.Model):
 
     id          = db.Column(db.Integer, primary_key=True)
 
-    # --- 關聯 ---
+    # --- 關聯外鍵 ---
     account_id  = db.Column(db.Integer, db.ForeignKey('customer_accounts.id'), nullable=False)
     bom_id      = db.Column(db.Integer, db.ForeignKey('boms.id'),              nullable=True)
 
     # --- 合約識別 ---
-    contract_number = db.Column(db.String(100), nullable=True)   # 手動輸入合約代號
-    project_code    = db.Column(db.String(100), nullable=True)   # 手動輸入專案代號
+    contract_number = db.Column(db.String(100), nullable=True)
+    project_code    = db.Column(db.String(100), nullable=True)
 
     # --- 合約期間 ---
     start_date  = db.Column(db.Date, nullable=True)
     end_date    = db.Column(db.Date, nullable=True)
 
     # --- 授權 KEY（4096 bit 以上長字串，純文字儲存）---
-    license_request_code = db.Column(db.Text, nullable=True)   # 授權請求 CODE
-    license_issue_code   = db.Column(db.Text, nullable=True)   # 開立的授權 CODE
+    license_request_code = db.Column(db.Text, nullable=True)
+    license_issue_code   = db.Column(db.Text, nullable=True)
 
     # --- 續約追蹤 ---
     parent_contract_id = db.Column(
@@ -133,29 +141,34 @@ class AccountContract(db.Model):
         db.ForeignKey('account_contracts.id'),
         nullable=True
     )
-    # new: 新合約 | renewal: 續約
     contract_type = db.Column(db.String(20), default='new', nullable=False)
 
-    # --- 狀態 ---
-    # active: 有效 | expired: 已到期 | cancelled: 已取消
+    # --- 狀態：active / expired / cancelled ---
     status = db.Column(db.String(20), default='active', nullable=False)
 
     # --- 時間戳記 ---
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # --- 關聯 ---
+    # --- 軟刪除 ---
+    is_deleted    = db.Column(db.Boolean,  default=False, nullable=False)
+    deleted_at    = db.Column(db.DateTime, nullable=True)
+    deleted_by_id = db.Column(db.Integer,  db.ForeignKey('users.id'), nullable=True)
+    deleted_by    = db.relationship('User', foreign_keys=[deleted_by_id])
+
+    # --- ORM 關聯 ---
     source_bom = db.relationship('BOM', foreign_keys=[bom_id], backref='contracts')
 
     # 續約鏈：parent（上一張）← 本張 → children（後續合約）
-    parent_contract  = db.relationship(
+    # child_contracts 不在 relationship 層過濾軟刪除，改在 renewal_chain property 內處理
+    parent_contract = db.relationship(
         'AccountContract',
         foreign_keys=[parent_contract_id],
         remote_side='AccountContract.id',
         backref=db.backref('child_contracts', lazy='dynamic')
     )
 
-    # 狀態對照表
+    # --- 狀態對照表 ---
     STATUS_DISPLAY = {
         'active':    ('有效', 'success'),
         'expired':   ('已到期', 'secondary'),
@@ -175,7 +188,7 @@ class AccountContract(db.Model):
         self.parent_contract_id = parent_contract_id
 
     # -------------------------------------------------------------------------
-    # 狀態判斷
+    # 狀態 property
     # -------------------------------------------------------------------------
 
     @property
@@ -213,27 +226,37 @@ class AccountContract(db.Model):
     def renewal_chain(self):
         """
         從本合約出發，收集整條續約鏈（含本張）
-        回傳由舊到新排列的合約列表
+        回傳由舊到新排列的合約列表。
+        軟刪除的合約在往上找 root 與往下展開時都會被跳過。
         """
-        # 先找到最頂層（root）合約
+        # 往上找 root：parent 存在且未軟刪除才繼續往上
         root = self
-        while root.parent_contract:
+        while root.parent_contract and not root.parent_contract.is_deleted:
             root = root.parent_contract
 
-        # 從 root 往下走，收集所有後續合約
+        # 往下走收集鏈：每一層只取未軟刪除的 child
         chain = []
         current = root
         while current:
             chain.append(current)
-            children = list(current.child_contracts)
-            # 每張合約只對應一張後續合約（線性鏈）
-            current = children[0] if children else None
+            active_children = [c for c in current.child_contracts if not c.is_deleted]
+            current = active_children[0] if active_children else None
         return chain
+
+    # -------------------------------------------------------------------------
+    # 操作方法
+    # -------------------------------------------------------------------------
 
     def auto_expire(self):
         """若已過到期日，自動更新狀態為 expired"""
         if self.end_date and self.end_date < date.today() and self.status == 'active':
             self.status = 'expired'
+
+    def soft_delete(self, user_id):
+        """軟刪除合約（退回用），保留歷史記錄"""
+        self.is_deleted    = True
+        self.deleted_at    = datetime.utcnow()
+        self.deleted_by_id = user_id
 
     def __repr__(self):
         return f'<AccountContract {self.contract_number or "未填"} [{self.status}]>'
