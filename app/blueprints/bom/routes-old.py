@@ -9,7 +9,6 @@ from app.models.booking import CustomerBooking
 from app.models.product import Module, Function, PricingTier
 from app.models.bom import BOM, BOMItem, get_boms_for_user, get_bom_statistics_for_user
 from app.utils.permissions import has_permission, permission_required
-from app.models.customer_ops import CustomerAccount, AccountContract
 
 
 # ---------------------------------------------------------------------------
@@ -471,17 +470,17 @@ def update_project_status(bom_id):
     if not (current_user.has_role('admin') or current_user.has_role('pm')):
         flash('您沒有權限變更專案狀態', 'danger')
         return redirect(url_for('bom.detail', bom_id=bom_id))
- 
+
     bom          = BOM.query.get_or_404(bom_id)
     new_status   = request.form.get('project_status', '').strip()
     close_reason = request.form.get('project_close_reason', '').strip() or None
     won_at_str   = request.form.get('won_at', '').strip()
- 
+
     valid_statuses = list(BOM.PROJECT_STATUS_DISPLAY.keys())
     if new_status not in valid_statuses:
         flash('無效的專案狀態', 'danger')
         return redirect(url_for('bom.detail', bom_id=bom_id))
- 
+
     # 解析自訂入帳日期（格式 YYYY-MM-DD），解析失敗則用當下時間
     won_at = None
     if new_status == 'won' and won_at_str:
@@ -489,29 +488,13 @@ def update_project_status(bom_id):
             won_at = datetime.strptime(won_at_str, '%Y-%m-%d')
         except ValueError:
             won_at = None
- 
+
     bom.update_project_status(new_status, close_reason=close_reason, won_at=won_at)
- 
-    # 狀態變更為 won 時，自動建立客戶帳戶與空白合約
-    contract_created = False
-    account          = None
-    if new_status == 'won':
-        account, contract = _auto_create_contract(bom)
-        contract_created  = contract is not None
- 
     db.session.commit()
- 
+
     flash(f'專案狀態已更新為「{bom.get_project_status_display()}」', 'success')
- 
-    if contract_created:
-        flash(
-            f'已自動建立合約記錄，請前往「客戶營運管理」填寫授權資訊。'
-            f' <a href="{url_for("customer_ops.detail", account_id=account.id)}"'
-            f' class="alert-link">前往查看</a>',
-            'info'
-        )
- 
     return redirect(url_for('bom.detail', bom_id=bom_id))
+
 
 # ---------------------------------------------------------------------------
 # 刪除

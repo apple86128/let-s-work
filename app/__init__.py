@@ -57,6 +57,7 @@ def _register_blueprints(app):
     from app.blueprints.bom       import bom_bp
     from app.blueprints.project   import project_bp
     from app.blueprints.kpi       import kpi_bp
+    from app.blueprints.customer_ops import customer_ops_bp 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(admin_bp)
@@ -65,6 +66,7 @@ def _register_blueprints(app):
     app.register_blueprint(bom_bp)
     app.register_blueprint(project_bp)   
     app.register_blueprint(kpi_bp)
+    app.register_blueprint(customer_ops_bp)
 
 
 def _init_database(app):

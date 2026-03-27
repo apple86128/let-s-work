@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}
+{{ '編輯客戶帳戶' if account else '新增客戶帳戶' }} - {{ config.SYSTEM_NAME }}
+{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-building me-2 text-primary"></i>
+{{ '編輯客戶帳戶' if account else '新增客戶帳戶' }}
+{% endblock %}
+
+{% block sub_menu %}
+<div class="d-flex gap-2">
+    {% if account %}
+    <a href="{{ url_for('customer_ops.detail', account_id=account.id) }}"
+       class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>返回帳戶頁面
+    </a>
+    {% else %}
+    <a href="{{ url_for('customer_ops.index') }}"
+       class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>返回列表
+    </a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-lg-7">
+
+<form method="POST"
+      action="{{ url_for('customer_ops.edit_account', account_id=account.id)
+                if account else
+                url_for('customer_ops.create_account') }}"
+      novalidate>
+
+    <!-- 公司基本資料 -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom">
+            <h6 class="mb-0">
+                <i class="fas fa-building me-2 text-primary"></i>公司資料
+            </h6>
+        </div>
+        <div class="card-body p-4">
+            <div class="row g-3">
+
+                <!-- 公司名稱（新建時可選擇既有 Booking 公司，或手動輸入） -->
+                <div class="col-12">
+                    <label class="form-label fw-semibold">
+                        公司名稱 <span class="text-danger">*</span>
+                    </label>
+
+                    {% if account %}
+                    <!-- 編輯時：公司名稱不可修改（唯一識別鍵） -->
+                    <input type="text" class="form-control"
+                           value="{{ account.company_name }}" disabled>
+                    <div class="form-text">公司名稱建立後不可修改</div>
+
+                    {% elif available_bookings %}
+                    <!-- 新建時：可從既有 Booking 選擇，或自行輸入 -->
+                    <div class="mb-2">
+                        <select class="form-select" id="booking-select"
+                                onchange="fillFromBooking(this)">
+                            <option value="">— 從 Booking 帶入公司資料（選填）—</option>
+                            {% for b in available_bookings %}
+                            <option value="{{ b.id }}"
+                                    data-name="{{ b.company_name }}"
+                                    data-tax="{{ b.company_tax_id or '' }}"
+                                    data-person="{{ b.contact_person or '' }}"
+                                    data-phone="{{ b.contact_phone or '' }}"
+                                    data-email="{{ b.contact_email or '' }}">
+                                {{ b.company_name }}
+                                {% if b.company_tax_id %}（{{ b.company_tax_id }}）{% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">選擇後自動帶入聯絡資料，仍可手動修改</div>
+                    </div>
+                    <input type="text" class="form-control" id="company-name-input"
+                           name="company_name"
+                           placeholder="或直接輸入公司名稱"
+                           value="{{ account.company_name if account else '' }}"
+                           required>
+
+                    {% else %}
+                    <!-- 新建時：無可用 Booking，直接輸入 -->
+                    <input type="text" class="form-control"
+                           name="company_name"
+                           placeholder="請輸入公司全名"
+                           value="{{ account.company_name if account else '' }}"
+                           required>
+                    {% endif %}
+                </div>
+
+                <!-- 統一編號 -->
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">統一編號</label>
+                    <input type="text" class="form-control" id="tax-input"
+                           name="company_tax_id"
+                           placeholder="例：12345678"
+                           value="{{ account.company_tax_id or '' if account else '' }}">
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- 聯絡資料 -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom">
+            <h6 class="mb-0">
+                <i class="fas fa-address-card me-2 text-primary"></i>聯絡資料
+            </h6>
+        </div>
+        <div class="card-body p-4">
+            <div class="row g-3">
+
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">聯絡人</label>
+                    <input type="text" class="form-control" id="person-input"
+                           name="contact_person"
+                           placeholder="主要聯絡人姓名"
+                           value="{{ account.contact_person or '' if account else '' }}">
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">聯絡電話</label>
+                    <input type="text" class="form-control" id="phone-input"
+                           name="contact_phone"
+                           placeholder="例：02-12345678"
+                           value="{{ account.contact_phone or '' if account else '' }}">
+                </div>
+
+                <div class="col-12">
+                    <label class="form-label fw-semibold">聯絡 Email</label>
+                    <input type="email" class="form-control" id="email-input"
+                           name="contact_email"
+                           placeholder="example@company.com"
+                           value="{{ account.contact_email or '' if account else '' }}">
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- 備註 -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom">
+            <h6 class="mb-0">
+                <i class="fas fa-sticky-note me-2 text-muted"></i>備註
+            </h6>
+        </div>
+        <div class="card-body p-4">
+            <textarea class="form-control" name="notes" rows="3"
+                      placeholder="其他備註事項...">{{ account.notes or '' if account else '' }}</textarea>
+        </div>
+    </div>
+
+    <!-- 送出 -->
+    <div class="d-grid">
+        <button type="submit" class="btn btn-primary btn-lg">
+            <i class="fas fa-save me-2"></i>
+            {{ '儲存變更' if account else '建立客戶帳戶' }}
+        </button>
+    </div>
+
+</form>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/**
+ * 從 Booking 下拉選單帶入公司聯絡資料
+ */
+function fillFromBooking(select) {
+    const opt = select.options[select.selectedIndex];
+    if (!opt.value) return;
+
+    document.getElementById('company-name-input').value = opt.dataset.name  || '';
+    document.getElementById('tax-input').value          = opt.dataset.tax    || '';
+    document.getElementById('person-input').value       = opt.dataset.person || '';
+    document.getElementById('phone-input').value        = opt.dataset.phone  || '';
+    document.getElementById('email-input').value        = opt.dataset.email  || '';
+}
+</script>
+{% endblock %}

@@ -88,7 +88,11 @@ PERMISSION_MAP = {
     # --- KPI 績效統計 ---
     'kpi_view':             ['admin', 'pm'],
     'kpi_manage':           ['admin', 'pm'],
+    # --- 客戶營運管理 ---
+    'customer_ops_view':    ['admin', 'pm'],           # 查看客戶帳戶與合約
+    'customer_ops_manage':  ['admin', 'pm'],           # 建立 / 編輯帳戶與合約
 }
+
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +278,18 @@ def get_user_menu_items(user):
             ]
         })
 
+
+    # 客戶營運管理 - admin / pm
+    if user.has_role('admin') or user.has_role('pm'):
+        menu.append({
+            'name': '客戶營運',
+            'url':  'customer_ops.index',
+            'icon': 'fas fa-building',
+            'submenu': [
+                {'name': '客戶帳戶列表', 'url': 'customer_ops.index'},
+            ]
+        })
+        
     # 產品管理 - admin / pm
     if user.has_role('admin') or user.has_role('pm'):
         menu.append({

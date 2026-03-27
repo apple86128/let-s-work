@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+
+{% block title %}
+{{ '編輯合約' if contract else '新增合約' }} - {{ account.company_name }} - {{ config.SYSTEM_NAME }}
+{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-file-contract me-2 text-success"></i>
+{{ '編輯合約' if contract else '新增合約' }}：{{ account.company_name }}
+{% endblock %}
+
+{% block sub_menu %}
+<div class="d-flex gap-2">
+    {% if contract %}
+    <a href="{{ url_for('customer_ops.contract_detail', account_id=account.id, contract_id=contract.id) }}"
+       class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>返回合約詳情
+    </a>
+    {% else %}
+    <a href="{{ url_for('customer_ops.detail', account_id=account.id) }}"
+       class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>返回客戶頁面
+    </a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+<div class="col-lg-8">
+
+<form method="POST"
+      action="{{ url_for('customer_ops.edit_contract', account_id=account.id, contract_id=contract.id)
+                if contract else
+                url_for('customer_ops.create_contract', account_id=account.id) }}"
+      novalidate>
+
+    <!-- ══════════════════════════════════
+         合約基本識別
+    ══════════════════════════════════ -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom">
+            <h6 class="mb-0">
+                <i class="fas fa-tag me-2 text-primary"></i>合約識別資訊
+            </h6>
+        </div>
+        <div class="card-body p-4">
+
+            <div class="row g-3">
+
+                <!-- 合約代號 -->
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">
+                        合約代號
+                        <small class="text-muted fw-normal">（公司內部編號）</small>
+                    </label>
+                    <input type="text" class="form-control"
+                           name="contract_number"
+                           placeholder="例：CT-2024-001"
+                           value="{{ contract.contract_number or '' if contract else '' }}">
+                </div>
+
+                <!-- 專案代號 -->
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">專案代號</label>
+                    <input type="text" class="form-control"
+                           name="project_code"
+                           placeholder="例：PRJ-ABC-2024"
+                           value="{{ contract.project_code or '' if contract else '' }}">
+                </div>
+
+                <!-- 合約類型 -->
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">合約類型</label>
+                    <select class="form-select" name="contract_type">
+                        <option value="new"
+                            {{ 'selected' if not contract or contract.contract_type == 'new' }}>
+                            新合約
+                        </option>
+                        <option value="renewal"
+                            {{ 'selected' if contract and contract.contract_type == 'renewal' }}>
+                            續約
+                        </option>
+                    </select>
+                </div>
+
+                <!-- 前一張合約（續約追蹤） -->
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">
+                        前一張合約
+                        <small class="text-muted fw-normal">（續約時選填）</small>
+                    </label>
+                    <select class="form-select" name="parent_contract_id">
+                        <option value="">— 無（新合約）—</option>
+                        {% for c in existing_contracts %}
+                        <option value="{{ c.id }}"
+                            {{ 'selected' if contract and contract.parent_contract_id == c.id }}>
+                            {{ c.contract_number or '（未填代號）' }}
+                            {% if c.end_date %}
+                                到期：{{ c.end_date.strftime('%Y-%m-%d') }}
+                            {% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- 來源 BOM（新建時顯示） -->
+                {% if not contract and available_boms %}
+                <div class="col-12">
+                    <label class="form-label fw-semibold">
+                        關聯 BOM
+                        <small class="text-muted fw-normal">（選填，連結此合約的來源 BOM）</small>
+                    </label>
+                    <select class="form-select" name="bom_id">
+                        <option value="">— 不關聯 BOM —</option>
+                        {% for bom in available_boms %}
+                        <option value="{{ bom.id }}">
+                            {{ bom.bom_number }} — {{ bom.project_name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
+
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════
+         合約期間
+    ══════════════════════════════════ -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom">
+            <h6 class="mb-0">
+                <i class="fas fa-calendar-alt me-2 text-primary"></i>合約期間
+            </h6>
+        </div>
+        <div class="card-body p-4">
+            <div class="row g-3">
+
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">合約起始日</label>
+                    <input type="date" class="form-control"
+                           name="start_date"
+                           value="{{ contract.start_date.strftime('%Y-%m-%d') if contract and contract.start_date else '' }}">
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">合約到期日</label>
+                    <input type="date" class="form-control"
+                           name="end_date"
+                           value="{{ contract.end_date.strftime('%Y-%m-%d') if contract and contract.end_date else '' }}">
+                </div>
+
+                <!-- 快速填入年數按鈕 -->
+                <div class="col-12">
+                    <div class="d-flex gap-2 align-items-center flex-wrap">
+                        <span class="text-muted small">快速設定合約長度：</span>
+                        {% for y in [1, 2, 3] %}
+                        <button type="button" class="btn btn-outline-secondary btn-sm"
+                                onclick="setContractYears({{ y }})">
+                            {{ y }} 年
+                        </button>
+                        {% endfor %}
+                    </div>
+                    <div class="form-text">選擇後會以起始日自動計算到期日</div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════
+         授權 KEY 資訊
+    ══════════════════════════════════ -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom">
+            <h6 class="mb-0">
+                <i class="fas fa-key me-2 text-warning"></i>授權 KEY 資訊
+                <small class="text-muted fw-normal ms-1">（4096 bit 以上長字串）</small>
+            </h6>
+        </div>
+        <div class="card-body p-4">
+
+            <!-- 授權請求 CODE -->
+            <div class="mb-4">
+                <label class="form-label fw-semibold">
+                    授權請求 CODE
+                    <small class="text-muted fw-normal">（License Request Key）</small>
+                </label>
+                <textarea class="form-control font-monospace"
+                          name="license_request_code"
+                          rows="5"
+                          placeholder="貼上授權請求 KEY..."
+                          style="font-size: 0.75rem; word-break: break-all;">{{ contract.license_request_code or '' if contract else '' }}</textarea>
+                <div class="form-text">請完整貼上，系統將完整儲存</div>
+            </div>
+
+            <!-- 開立授權 CODE -->
+            <div class="mb-0">
+                <label class="form-label fw-semibold">
+                    開立授權 CODE
+                    <small class="text-muted fw-normal">（License Issue Key）</small>
+                </label>
+                <textarea class="form-control font-monospace"
+                          name="license_issue_code"
+                          rows="5"
+                          placeholder="貼上開立的授權 KEY..."
+                          style="font-size: 0.75rem; word-break: break-all;">{{ contract.license_issue_code or '' if contract else '' }}</textarea>
+                <div class="form-text">請完整貼上，系統將完整儲存</div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════
+         合約狀態（編輯時才顯示）
+    ══════════════════════════════════ -->
+    {% if contract %}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom">
+            <h6 class="mb-0">
+                <i class="fas fa-toggle-on me-2 text-primary"></i>合約狀態
+            </h6>
+        </div>
+        <div class="card-body p-4">
+            <div class="d-flex gap-4">
+                {% for value, label in [('active','有效'), ('expired','已到期'), ('cancelled','已取消')] %}
+                <div class="form-check">
+                    <input class="form-check-input" type="radio"
+                           name="status" value="{{ value }}" id="status_{{ value }}"
+                           {{ 'checked' if contract.status == value }}>
+                    <label class="form-check-label" for="status_{{ value }}">
+                        {% set color = {'active':'success','expired':'secondary','cancelled':'danger'} %}
+                        <span class="badge bg-{{ color[value] }}">{{ label }}</span>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- 送出按鈕 -->
+    <div class="d-grid">
+        <button type="submit" class="btn btn-primary btn-lg">
+            <i class="fas fa-save me-2"></i>
+            {{ '儲存變更' if contract else '建立合約' }}
+        </button>
+    </div>
+
+</form>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/**
+ * 快速設定合約到期日
+ * 以起始日為基準，加上指定年數
+ */
+function setContractYears(years) {
+    const startInput = document.querySelector('input[name="start_date"]');
+    const endInput   = document.querySelector('input[name="end_date"]');
+
+    if (!startInput.value) {
+        alert('請先填寫合約起始日');
+        return;
+    }
+
+    const start  = new Date(startInput.value);
+    const end    = new Date(start);
+    end.setFullYear(end.getFullYear() + years);
+    end.setDate(end.getDate() - 1);   // 到期日為起始日前一天（例：1/1 起始，12/31 到期）
+
+    endInput.value = end.toISOString().split('T')[0];
+}
+</script>
+{% endblock %}

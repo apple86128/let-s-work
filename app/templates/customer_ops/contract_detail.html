@@ -1,0 +1,369 @@
+{% extends "base.html" %}
+
+{% block title %}
+{{ contract.contract_number or '合約詳情' }} - {{ account.company_name }} - {{ config.SYSTEM_NAME }}
+{% endblock %}
+
+{% block page_title %}
+<i class="fas fa-file-contract me-2 text-success"></i>
+合約詳情：{{ contract.contract_number or '（未填代號）' }}
+<span class="badge bg-{{ contract.status_color }} ms-2">{{ contract.status_label }}</span>
+{% endblock %}
+
+{% block sub_menu %}
+<div class="d-flex gap-2">
+    {% if has_permission(current_user, 'customer_ops_manage') %}
+    <a href="{{ url_for('customer_ops.edit_contract', account_id=account.id, contract_id=contract.id) }}"
+       class="btn btn-outline-primary btn-sm">
+        <i class="fas fa-edit me-1"></i>編輯合約
+    </a>
+    {% endif %}
+    <a href="{{ url_for('customer_ops.detail', account_id=account.id) }}"
+       class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-arrow-left me-1"></i>返回客戶頁面
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+
+    <!-- ══════════════════════════════════════════
+         左欄：合約主要資訊
+    ══════════════════════════════════════════ -->
+    <div class="col-lg-8">
+
+        <!-- 合約基本資料 -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0">
+                    <i class="fas fa-tag me-2 text-muted"></i>合約基本資料
+                </h6>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+
+                    <dt class="col-sm-4 text-muted">客戶公司</dt>
+                    <dd class="col-sm-8 fw-semibold">
+                        <a href="{{ url_for('customer_ops.detail', account_id=account.id) }}"
+                           class="text-decoration-none">
+                            {{ account.company_name }}
+                        </a>
+                    </dd>
+
+                    <dt class="col-sm-4 text-muted">合約代號</dt>
+                    <dd class="col-sm-8 fw-semibold">
+                        {{ contract.contract_number or '—' }}
+                    </dd>
+
+                    <dt class="col-sm-4 text-muted">專案代號</dt>
+                    <dd class="col-sm-8">{{ contract.project_code or '—' }}</dd>
+
+                    <dt class="col-sm-4 text-muted">合約類型</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge bg-{{ 'primary' if contract.contract_type == 'new' else 'secondary' }}">
+                            {{ contract.contract_type_label }}
+                        </span>
+                        {% if contract.parent_contract %}
+                        <span class="ms-2 text-muted small">
+                            前一張：
+                            <a href="{{ url_for('customer_ops.contract_detail',
+                                                account_id=account.id,
+                                                contract_id=contract.parent_contract.id) }}"
+                               class="text-decoration-none">
+                                {{ contract.parent_contract.contract_number or '（未填代號）' }}
+                            </a>
+                        </span>
+                        {% endif %}
+                    </dd>
+
+                    <dt class="col-sm-4 text-muted">合約起始日</dt>
+                    <dd class="col-sm-8">
+                        {{ contract.start_date.strftime('%Y-%m-%d') if contract.start_date else '—' }}
+                    </dd>
+
+                    <dt class="col-sm-4 text-muted">合約到期日</dt>
+                    <dd class="col-sm-8">
+                        {% if contract.end_date %}
+                        {{ contract.end_date.strftime('%Y-%m-%d') }}
+                        {% if contract.is_expiring_soon %}
+                        <span class="badge bg-warning text-dark ms-2">
+                            <i class="fas fa-clock me-1"></i>剩 {{ contract.days_until_expiry }} 天
+                        </span>
+                        {% elif contract.days_until_expiry is not none and contract.days_until_expiry < 0 %}
+                        <span class="badge bg-secondary ms-2">
+                            已過期 {{ contract.days_until_expiry | abs }} 天
+                        </span>
+                        {% endif %}
+                        {% else %}
+                        —
+                        {% endif %}
+                    </dd>
+
+                    {% if contract.source_bom %}
+                    <dt class="col-sm-4 text-muted">來源 BOM</dt>
+                    <dd class="col-sm-8">
+                        <a href="{{ url_for('bom.detail', bom_id=contract.source_bom.id) }}"
+                           class="text-decoration-none">
+                            {{ contract.source_bom.bom_number }}
+                        </a>
+                        <span class="text-muted small ms-1">{{ contract.source_bom.project_name }}</span>
+                    </dd>
+                    {% endif %}
+
+                </dl>
+            </div>
+        </div>
+
+        <!-- 授權請求 CODE -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="fas fa-upload me-2 text-warning"></i>授權請求 CODE
+                    <small class="text-muted fw-normal ms-1">（License Request Key）</small>
+                </h6>
+                {% if contract.license_request_code %}
+                <button class="btn btn-sm btn-outline-secondary"
+                        onclick="copyKey('request-key-content', this)"
+                        title="複製完整 KEY">
+                    <i class="fas fa-copy me-1"></i>複製
+                </button>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if contract.license_request_code %}
+                <!-- 預覽：僅顯示前 100 字元 -->
+                <div class="p-3 rounded bg-light font-monospace small text-break mb-2"
+                     style="max-height: 80px; overflow: hidden; position: relative;">
+                    {{ contract.license_request_code[:100] }}
+                    {% if contract.license_request_code | length > 100 %}
+                    <span class="text-muted">... （共 {{ contract.license_request_code | length }} 字元）</span>
+                    {% endif %}
+                </div>
+                <!-- 完整 KEY 隱藏於此，供複製使用 -->
+                <div id="request-key-content" class="d-none">{{ contract.license_request_code }}</div>
+                <div class="text-muted small">
+                    <i class="fas fa-info-circle me-1"></i>
+                    點擊「複製」按鈕可取得完整 KEY
+                </div>
+                {% else %}
+                <div class="text-muted text-center py-3">
+                    <i class="fas fa-minus-circle me-1"></i>尚未填寫
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 開立授權 CODE -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="fas fa-download me-2 text-success"></i>開立授權 CODE
+                    <small class="text-muted fw-normal ms-1">（License Issue Key）</small>
+                </h6>
+                {% if contract.license_issue_code %}
+                <button class="btn btn-sm btn-outline-secondary"
+                        onclick="copyKey('issue-key-content', this)"
+                        title="複製完整 KEY">
+                    <i class="fas fa-copy me-1"></i>複製
+                </button>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if contract.license_issue_code %}
+                <!-- 預覽：僅顯示前 100 字元 -->
+                <div class="p-3 rounded bg-light font-monospace small text-break mb-2"
+                     style="max-height: 80px; overflow: hidden; position: relative;">
+                    {{ contract.license_issue_code[:100] }}
+                    {% if contract.license_issue_code | length > 100 %}
+                    <span class="text-muted">... （共 {{ contract.license_issue_code | length }} 字元）</span>
+                    {% endif %}
+                </div>
+                <!-- 完整 KEY 隱藏於此，供複製使用 -->
+                <div id="issue-key-content" class="d-none">{{ contract.license_issue_code }}</div>
+                <div class="text-muted small">
+                    <i class="fas fa-info-circle me-1"></i>
+                    點擊「複製」按鈕可取得完整 KEY
+                </div>
+                {% else %}
+                <div class="text-muted text-center py-3">
+                    <i class="fas fa-minus-circle me-1"></i>尚未填寫
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         右欄：續約鏈 + 側邊資訊
+    ══════════════════════════════════════════ -->
+    <div class="col-lg-4">
+
+        <!-- 合約狀態卡 -->
+        <div class="card border-0 shadow-sm mb-3 border-{{ contract.status_color }} border-2">
+            <div class="card-body text-center py-4">
+                <div class="mb-2">
+                    {% if contract.status == 'active' %}
+                    <i class="fas fa-check-circle fa-3x text-success"></i>
+                    {% elif contract.status == 'expired' %}
+                    <i class="fas fa-times-circle fa-3x text-secondary"></i>
+                    {% else %}
+                    <i class="fas fa-ban fa-3x text-danger"></i>
+                    {% endif %}
+                </div>
+                <div class="fs-5 fw-bold">{{ contract.status_label }}</div>
+                {% if contract.end_date %}
+                <div class="text-muted small mt-1">
+                    到期日：{{ contract.end_date.strftime('%Y-%m-%d') }}
+                </div>
+                {% endif %}
+                {% if contract.is_expiring_soon %}
+                <div class="alert alert-warning mt-3 mb-0 py-2 small">
+                    <i class="fas fa-exclamation-triangle me-1"></i>
+                    即將到期，請安排續約
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 授權資訊完整度 -->
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0"><i class="fas fa-tasks me-2 text-muted"></i>資訊完整度</h6>
+            </div>
+            <div class="card-body p-3">
+                {% set checks = [
+                    ('合約代號',      contract.contract_number),
+                    ('專案代號',      contract.project_code),
+                    ('合約起始日',    contract.start_date),
+                    ('合約到期日',    contract.end_date),
+                    ('授權請求 CODE', contract.license_request_code),
+                    ('開立授權 CODE', contract.license_issue_code),
+                ] %}
+                {% for label, value in checks %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="small text-muted">{{ label }}</span>
+                    {% if value %}
+                    <i class="fas fa-check-circle text-success"></i>
+                    {% else %}
+                    <i class="fas fa-circle text-light border rounded-circle"></i>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                {% set filled = checks | selectattr('1') | list | length %}
+                <div class="mt-3">
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span class="text-muted">完整度</span>
+                        <span>{{ filled }} / {{ checks | length }}</span>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar bg-{{ 'success' if filled == checks|length else 'warning' }}"
+                             style="width: {{ (filled / checks|length * 100) | int }}%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 續約時間軸 -->
+        {% if renewal_chain | length > 1 %}
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white border-bottom">
+                <h6 class="mb-0">
+                    <i class="fas fa-link me-2 text-muted"></i>續約鏈
+                    <span class="badge bg-secondary ms-1">{{ renewal_chain | length }} 張</span>
+                </h6>
+            </div>
+            <div class="card-body p-3">
+                <ul class="list-unstyled mb-0">
+                    {% for c in renewal_chain %}
+                    <li class="d-flex align-items-start gap-2 mb-2">
+                        <!-- 時間軸連接線 -->
+                        <div class="d-flex flex-column align-items-center" style="min-width: 20px;">
+                            <div class="rounded-circle bg-{{ c.status_color }}"
+                                 style="width:10px; height:10px; margin-top:4px;"></div>
+                            {% if not loop.last %}
+                            <div class="bg-secondary" style="width:2px; flex:1; min-height:20px; margin-top:2px;"></div>
+                            {% endif %}
+                        </div>
+                        <!-- 合約資訊 -->
+                        <div class="flex-grow-1 small">
+                            {% if c.id == contract.id %}
+                            <span class="fw-bold text-primary">
+                                {{ c.contract_number or '（未填代號）' }}
+                                <span class="badge bg-primary ms-1" style="font-size:10px">目前</span>
+                            </span>
+                            {% else %}
+                            <a href="{{ url_for('customer_ops.contract_detail',
+                                                account_id=account.id,
+                                                contract_id=c.id) }}"
+                               class="text-decoration-none fw-semibold">
+                                {{ c.contract_number or '（未填代號）' }}
+                            </a>
+                            {% endif %}
+                            <div class="text-muted" style="font-size:11px;">
+                                {{ c.contract_type_label }}
+                                {% if c.end_date %}
+                                · 到期 {{ c.end_date.strftime('%Y-%m-%d') }}
+                                {% endif %}
+                            </div>
+                        </div>
+                        <!-- 狀態 -->
+                        <span class="badge bg-{{ c.status_color }}" style="font-size:10px;">
+                            {{ c.status_label }}
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 建立時間 -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-3">
+                <dl class="row mb-0 small">
+                    <dt class="col-5 text-muted">建立時間</dt>
+                    <dd class="col-7">
+                        {{ contract.created_at.strftime('%Y-%m-%d %H:%M') }}
+                    </dd>
+                    <dt class="col-5 text-muted">最後更新</dt>
+                    <dd class="col-7">
+                        {{ contract.updated_at.strftime('%Y-%m-%d %H:%M') if contract.updated_at else '—' }}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/**
+ * 複製完整 KEY 到剪貼簿
+ * @param {string} elementId - 含完整 KEY 文字的隱藏元素 ID
+ * @param {HTMLElement} btn   - 觸發按鈕，複製後短暫變色提示
+ */
+function copyKey(elementId, btn) {
+    const content = document.getElementById(elementId);
+    if (!content) return;
+
+    navigator.clipboard.writeText(content.textContent.trim())
+        .then(() => {
+            const original = btn.innerHTML;
+            btn.innerHTML  = '<i class="fas fa-check me-1"></i>已複製';
+            btn.classList.replace('btn-outline-secondary', 'btn-success');
+
+            setTimeout(() => {
+                btn.innerHTML = original;
+                btn.classList.replace('btn-success', 'btn-outline-secondary');
+            }, 2000);
+        })
+        .catch(() => {
+            alert('複製失敗，請手動選取並複製');
+        });
+}
+</script>
+{% endblock %}
