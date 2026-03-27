@@ -30,7 +30,7 @@ def _get_or_create_account(company_name, booking=None):
         contact_email  = booking.contact_email   if booking else None,
     )
     db.session.add(account)
-    db.session.flush()   # 取得 id，但尚未 commit
+    db.session.flush()
     return account
 
 
@@ -42,6 +42,22 @@ def _parse_date(value):
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+def _get_parent_contract_ids(form):
+    """
+    從 form 取得多選的前一張合約 ID 列表
+    checkbox 欄位名稱為 parent_contract_ids（複數）
+    回傳 list[int]，可為空列表
+    """
+    raw = form.getlist('parent_contract_ids')
+    result = []
+    for v in raw:
+        try:
+            result.append(int(v))
+        except (ValueError, TypeError):
+            pass
+    return result
 
 
 # =============================================================================
@@ -69,31 +85,17 @@ def detail(account_id):
         contract.auto_expire()
     db.session.commit()
 
-    # 取得該公司所有 BOM（含已批准）
-    from app.models.bom import BOM
-    boms = BOM.query.filter(
-        BOM.customer_company == account.company_name,
-        BOM.is_deleted == False
-    ).order_by(BOM.created_at.desc()).all()
-
-    return render_template('customer_ops/detail.html',
-                           account=account,
-                           boms=boms)
+    return render_template('customer_ops/detail.html', account=account)
 
 
 @customer_ops_bp.route('/create', methods=['GET', 'POST'])
 @login_required
 @permission_required('customer_ops_manage')
 def create_account():
-    """手動建立客戶帳戶"""
-    # 提供已有 Booking 的公司名稱作為選項
-    existing_names = {a.company_name for a in CustomerAccount.query.all()}
-    bookings = CustomerBooking.query.filter(
-        CustomerBooking.is_deleted == False
-    ).order_by(CustomerBooking.company_name).all()
-
-    # 過濾掉已有帳戶的公司
-    available_bookings = [b for b in bookings if b.company_name not in existing_names]
+    """建立新客戶帳戶"""
+    available_bookings = CustomerBooking.query.filter_by(
+        status='approved', is_deleted=False
+    ).order_by(CustomerBooking.created_at.desc()).all()
 
     if request.method == 'GET':
         return render_template('customer_ops/account_form.html',
@@ -102,13 +104,13 @@ def create_account():
 
     company_name = request.form.get('company_name', '').strip()
     if not company_name:
-        flash('請輸入公司名稱', 'warning')
+        flash('公司名稱為必填', 'danger')
         return render_template('customer_ops/account_form.html',
                                account=None,
                                available_bookings=available_bookings)
 
     if CustomerAccount.query.filter_by(company_name=company_name).first():
-        flash('此公司帳戶已存在', 'warning')
+        flash(f'客戶帳戶「{company_name}」已存在', 'warning')
         return render_template('customer_ops/account_form.html',
                                account=None,
                                available_bookings=available_bookings)
@@ -117,12 +119,13 @@ def create_account():
         company_name   = company_name,
         company_tax_id = request.form.get('company_tax_id', '').strip() or None,
         contact_person = request.form.get('contact_person', '').strip() or None,
-        contact_phone  = request.form.get('contact_phone', '').strip()  or None,
-        contact_email  = request.form.get('contact_email', '').strip()  or None,
-        notes          = request.form.get('notes', '').strip()          or None,
+        contact_phone  = request.form.get('contact_phone',  '').strip() or None,
+        contact_email  = request.form.get('contact_email',  '').strip() or None,
+        notes          = request.form.get('notes',          '').strip() or None,
     )
     db.session.add(account)
     db.session.commit()
+
     flash(f'已建立客戶帳戶：{company_name}', 'success')
     return redirect(url_for('customer_ops.detail', account_id=account.id))
 
@@ -141,9 +144,9 @@ def edit_account(account_id):
 
     account.company_tax_id = request.form.get('company_tax_id', '').strip() or None
     account.contact_person = request.form.get('contact_person', '').strip() or None
-    account.contact_phone  = request.form.get('contact_phone', '').strip()  or None
-    account.contact_email  = request.form.get('contact_email', '').strip()  or None
-    account.notes          = request.form.get('notes', '').strip()          or None
+    account.contact_phone  = request.form.get('contact_phone',  '').strip() or None
+    account.contact_email  = request.form.get('contact_email',  '').strip() or None
+    account.notes          = request.form.get('notes',          '').strip() or None
 
     db.session.commit()
     flash(f'已更新客戶帳戶：{account.company_name}', 'success')
@@ -161,10 +164,9 @@ def create_contract(account_id):
     """手動建立合約（通常由 BOM approved 自動觸發，此為補建用）"""
     account = CustomerAccount.query.get_or_404(account_id)
 
-    # 取得該帳戶尚未建立合約的已批准 BOM
     from app.models.bom import BOM
-    # account.contracts 已排除軟刪除合約（model 層 primaryjoin 控制）
-    # 退回的合約不會佔用 BOM，該 BOM 可重新被選取
+
+    # 已被有效合約關聯的 BOM id 集合（排除軟刪除合約）
     linked_bom_ids = {c.bom_id for c in account.contracts if c.bom_id}
 
     # 可選 BOM：專案狀態為「已成案（won）」且未被有效合約關聯
@@ -175,33 +177,38 @@ def create_contract(account_id):
         BOM.id.notin_(linked_bom_ids)
     ).order_by(BOM.created_at.desc()).all()
 
-    # 現有合約（供選擇上一張合約，即續約來源）
+    # 現有合約（供多選 checkbox：選擇被本次新合約繼承的舊合約）
     existing_contracts = AccountContract.query.filter(
         AccountContract.account_id == account_id,
         AccountContract.is_deleted == False
-    ).all()
+    ).order_by(AccountContract.created_at.desc()).all()
 
     if request.method == 'GET':
         return render_template('customer_ops/contract_form.html',
                                account=account,
                                contract=None,
                                available_boms=available_boms,
-                               existing_contracts=existing_contracts)
+                               existing_contracts=existing_contracts,
+                               selected_parent_ids=[])
 
-    bom_id             = request.form.get('bom_id', type=int)
-    contract_type      = request.form.get('contract_type', 'new')
-    parent_contract_id = request.form.get('parent_contract_id', type=int) or None
+    # ── POST 處理 ──
+    bom_id        = request.form.get('bom_id', type=int)
+    contract_type = request.form.get('contract_type', 'new')
 
     contract = AccountContract(
-        account_id         = account_id,
-        bom_id             = bom_id or None,
-        contract_type      = contract_type,
-        parent_contract_id = parent_contract_id,
+        account_id    = account_id,
+        bom_id        = bom_id or None,
+        contract_type = contract_type,
     )
     _fill_contract_fields(contract, request.form)
     db.session.add(contract)
-    db.session.commit()
+    db.session.flush()   # 取得 contract.id，供多對多寫入
 
+    # 寫入多對多前一張合約關聯
+    parent_ids = _get_parent_contract_ids(request.form)
+    contract.set_parent_contracts(parent_ids)
+
+    db.session.commit()
     flash('合約已建立', 'success')
     return redirect(url_for('customer_ops.contract_detail',
                             account_id=account_id,
@@ -241,19 +248,25 @@ def edit_contract(account_id, contract_id):
         flash('合約不屬於此客戶帳戶', 'danger')
         return redirect(url_for('customer_ops.detail', account_id=account_id))
 
+    # 現有合約清單（排除本張自身，避免循環繼承）
     existing_contracts = AccountContract.query.filter(
         AccountContract.account_id == account_id,
         AccountContract.id         != contract_id,
         AccountContract.is_deleted == False
-    ).all()
+    ).order_by(AccountContract.created_at.desc()).all()
+
+    # 目前已選的前一張合約 id 列表（供 template 預設勾選）
+    selected_parent_ids = [c.id for c in contract.active_parent_contracts]
 
     if request.method == 'GET':
         return render_template('customer_ops/contract_form.html',
                                account=account,
                                contract=contract,
                                available_boms=[],
-                               existing_contracts=existing_contracts)
+                               existing_contracts=existing_contracts,
+                               selected_parent_ids=selected_parent_ids)
 
+    # ── POST 處理 ──
     _fill_contract_fields(contract, request.form)
 
     # 狀態只允許 admin / pm 修改
@@ -262,18 +275,26 @@ def edit_contract(account_id, contract_id):
         if new_status in ('active', 'expired', 'cancelled'):
             contract.status = new_status
 
+    # 更新多對多前一張合約關聯
+    parent_ids = _get_parent_contract_ids(request.form)
+    contract.set_parent_contracts(parent_ids)
+
+    # contract_type 同步更新（有選 parent 則視為 renewal）
+    contract.contract_type = request.form.get('contract_type', 'new')
+
     db.session.commit()
     flash('合約已更新', 'success')
     return redirect(url_for('customer_ops.contract_detail',
                             account_id=account_id,
                             contract_id=contract_id))
 
+
 @customer_ops_bp.route('/<int:account_id>/contracts/<int:contract_id>/return',
                         methods=['POST'])
 @login_required
 def return_contract(account_id, contract_id):
     """退回合約（軟刪除）— admin / pm 專用
-    
+
     執行後合約記錄保留但標記為已刪除，
     讓同一張 BOM 可從客戶頁面手動重新建立合約。
     """
@@ -296,8 +317,9 @@ def return_contract(account_id, contract_id):
     contract.soft_delete(current_user.id)
     db.session.commit()
 
-    flash(f'合約已退回，可從客戶頁面重新建立合約並選擇對應 BOM', 'success')
+    flash('合約已退回，可從客戶頁面重新建立合約並選擇對應 BOM', 'success')
     return redirect(url_for('customer_ops.detail', account_id=account_id))
+
 
 @customer_ops_bp.route('/<int:account_id>/contracts/<int:contract_id>/unlink-bom',
                         methods=['POST'])
@@ -322,8 +344,7 @@ def unlink_bom(account_id, contract_id):
                                 account_id=account_id,
                                 contract_id=contract_id))
 
-    # 解除關聯：清空 bom_id
-    bom_number     = contract.source_bom.bom_number if contract.source_bom else '（未知）'
+    bom_number      = contract.source_bom.bom_number if contract.source_bom else '（未知）'
     contract.bom_id = None
     db.session.commit()
 
@@ -338,10 +359,10 @@ def unlink_bom(account_id, contract_id):
 # =============================================================================
 
 def _fill_contract_fields(contract, form):
-    """從 form 資料填入合約欄位"""
-    contract.contract_number     = form.get('contract_number', '').strip() or None
-    contract.project_code        = form.get('project_code', '').strip()    or None
-    contract.start_date          = _parse_date(form.get('start_date'))
-    contract.end_date            = _parse_date(form.get('end_date'))
+    """從 form 資料填入合約欄位（不含 parent 關聯，由呼叫端另行處理）"""
+    contract.contract_number      = form.get('contract_number', '').strip() or None
+    contract.project_code         = form.get('project_code',   '').strip() or None
+    contract.start_date           = _parse_date(form.get('start_date'))
+    contract.end_date             = _parse_date(form.get('end_date'))
     contract.license_request_code = form.get('license_request_code', '').strip() or None
-    contract.license_issue_code   = form.get('license_issue_code', '').strip()   or None
+    contract.license_issue_code   = form.get('license_issue_code',   '').strip() or None

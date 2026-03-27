@@ -3,6 +3,28 @@ from app.models import db
 
 
 # =============================================================================
+# ContractParent — 合約多對多續約關聯表
+# 一張新合約可繼承多張舊合約（例如客戶多次下單後整合為一張新合約）
+# =============================================================================
+
+contract_parents = db.Table(
+    'contract_parents',
+    db.Column(
+        'child_contract_id',
+        db.Integer,
+        db.ForeignKey('account_contracts.id'),
+        primary_key=True
+    ),
+    db.Column(
+        'parent_contract_id',
+        db.Integer,
+        db.ForeignKey('account_contracts.id'),
+        primary_key=True
+    ),
+)
+
+
+# =============================================================================
 # CustomerAccount — 客戶帳戶（以公司為主體）
 # 資料來源引用自 CustomerBooking，不重複儲存公司基本資料
 # =============================================================================
@@ -57,8 +79,7 @@ class CustomerAccount(db.Model):
     # -------------------------------------------------------------------------
 
     def _won_boms(self):
-        """取得所有專案狀態為「已成案」且未刪除的關聯 BOM
-        貢獻計算以 project_status == 'won' 為準，而非審核狀態"""
+        """取得所有專案狀態為「已成案」且未刪除的關聯 BOM"""
         from app.models.bom import BOM
         return BOM.query.filter(
             BOM.customer_company == self.company_name,
@@ -68,7 +89,7 @@ class CustomerAccount(db.Model):
 
     @property
     def total_license_value(self):
-        """授權金額總計（BOM final_price，不含人力），僅計入已成案（won）的 BOM"""
+        """授權金額總計（BOM final_price），僅計入已成案（won）的 BOM"""
         return sum(
             (b.final_price or b.suggested_price or 0)
             for b in self._won_boms()
@@ -89,18 +110,22 @@ class CustomerAccount(db.Model):
 
     @property
     def active_contracts(self):
-        """有效合約列表（自動透過 contracts property 排除軟刪除）"""
+        """有效合約列表（排除軟刪除）"""
         return [c for c in self.contracts if c.status == 'active']
 
     @property
     def expiring_soon_contracts(self):
-        """30 天內即將到期的合約（自動透過 contracts property 排除軟刪除）"""
+        """
+        30 天內即將到期的合約（排除軟刪除、排除已被 renew 的合約）
+        已被新合約繼承的舊合約不列入到期警示，避免誤報
+        """
         threshold = date.today() + timedelta(days=30)
         return [
             c for c in self.contracts
             if c.status == 'active'
             and c.end_date
             and c.end_date <= threshold
+            and not c.has_renewal          # 已被續約的合約不列入
         ]
 
     def __repr__(self):
@@ -135,7 +160,7 @@ class AccountContract(db.Model):
     license_request_code = db.Column(db.Text, nullable=True)
     license_issue_code   = db.Column(db.Text, nullable=True)
 
-    # --- 續約追蹤 ---
+    # --- 續約追蹤（舊版單一 FK，保留向後相容）---
     parent_contract_id = db.Column(
         db.Integer,
         db.ForeignKey('account_contracts.id'),
@@ -159,13 +184,23 @@ class AccountContract(db.Model):
     # --- ORM 關聯 ---
     source_bom = db.relationship('BOM', foreign_keys=[bom_id], backref='contracts')
 
-    # 續約鏈：parent（上一張）← 本張 → children（後續合約）
+    # 舊版單張 parent（向後相容，保留不動）
     # child_contracts 不在 relationship 層過濾軟刪除，改在 renewal_chain property 內處理
     parent_contract = db.relationship(
         'AccountContract',
         foreign_keys=[parent_contract_id],
         remote_side='AccountContract.id',
         backref=db.backref('child_contracts', lazy='dynamic')
+    )
+
+    # 多對多：本合約繼承的多張舊合約（新架構）
+    parent_contracts = db.relationship(
+        'AccountContract',
+        secondary=contract_parents,
+        primaryjoin='AccountContract.id == contract_parents.c.child_contract_id',
+        secondaryjoin='AccountContract.id == contract_parents.c.parent_contract_id',
+        backref=db.backref('child_contracts_m2m', lazy='dynamic'),
+        lazy='dynamic',
     )
 
     # --- 狀態對照表 ---
@@ -223,29 +258,95 @@ class AccountContract(db.Model):
         return bool(self.contract_number and self.start_date and self.end_date)
 
     @property
+    def has_renewal(self):
+        """
+        是否已被新合約繼承（已 renew）
+        判斷邏輯：多對多 child_contracts_m2m 中有任何一張未軟刪除的子合約
+        用於：合約列表顯示「已續約」badge、排除到期統計
+        """
+        return self.child_contracts_m2m.filter_by(is_deleted=False).count() > 0
+
+    @property
+    def active_parent_contracts(self):
+        """
+        本合約繼承的多張舊合約（排除軟刪除）
+        供 template 顯示前一張合約列表使用
+        """
+        return [c for c in self.parent_contracts if not c.is_deleted]
+
+    @property
     def renewal_chain(self):
         """
         從本合約出發，收集整條續約鏈（含本張）
         回傳由舊到新排列的合約列表。
+        注意：多對多情況下鏈狀結構為簡化顯示，取第一個 parent 往上追溯。
         軟刪除的合約在往上找 root 與往下展開時都會被跳過。
         """
-        # 往上找 root：parent 存在且未軟刪除才繼續往上
-        root = self
-        while root.parent_contract and not root.parent_contract.is_deleted:
-            root = root.parent_contract
+        # 往上找 root：優先使用多對多的第一個 parent；退回舊版單一 parent_contract
+        def get_parent(contract):
+            parents = [c for c in contract.parent_contracts if not c.is_deleted]
+            if parents:
+                return parents[0]
+            if contract.parent_contract and not contract.parent_contract.is_deleted:
+                return contract.parent_contract
+            return None
 
-        # 往下走收集鏈：每一層只取未軟刪除的 child
+        root = self
+        visited = set()
+        while True:
+            p = get_parent(root)
+            if p is None or p.id in visited:
+                break
+            visited.add(p.id)
+            root = p
+
+        # 往下走收集鏈：每一層優先取多對多 children
         chain = []
         current = root
-        while current:
+        visited_down = set()
+        while current and current.id not in visited_down:
             chain.append(current)
-            active_children = [c for c in current.child_contracts if not c.is_deleted]
-            current = active_children[0] if active_children else None
+            visited_down.add(current.id)
+            # 多對多 children
+            m2m_children = [
+                c for c in current.child_contracts_m2m
+                if not c.is_deleted
+            ]
+            # 舊版 children（向後相容）
+            legacy_children = [
+                c for c in current.child_contracts
+                if not c.is_deleted
+            ]
+            next_contracts = m2m_children or legacy_children
+            current = next_contracts[0] if next_contracts else None
+
         return chain
 
     # -------------------------------------------------------------------------
     # 操作方法
     # -------------------------------------------------------------------------
+
+    def set_parent_contracts(self, contract_ids):
+        """
+        設定本合約繼承的多張舊合約（多對多）
+        同時更新舊版 parent_contract_id（取第一個，向後相容）
+        contract_ids: list[int]，允許空列表（代表新合約無前身）
+        """
+        # 清除舊有多對多關聯
+        for old_parent in list(self.parent_contracts):
+            self.parent_contracts.remove(old_parent)
+
+        if not contract_ids:
+            self.parent_contract_id = None
+            return
+
+        for cid in contract_ids:
+            parent = AccountContract.query.get(cid)
+            if parent and not parent.is_deleted:
+                self.parent_contracts.append(parent)
+
+        # 舊版相容：取第一個 parent 的 id
+        self.parent_contract_id = contract_ids[0]
 
     def auto_expire(self):
         """若已過到期日，自動更新狀態為 expired"""

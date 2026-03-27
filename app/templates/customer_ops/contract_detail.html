@@ -8,6 +8,11 @@
 <i class="fas fa-file-contract me-2 text-success"></i>
 合約詳情：{{ contract.contract_number or '（未填代號）' }}
 <span class="badge bg-{{ contract.status_color }} ms-2">{{ contract.status_label }}</span>
+{% if contract.has_renewal %}
+<span class="badge bg-success ms-1">
+    <i class="fas fa-sync-alt me-1"></i>已續約
+</span>
+{% endif %}
 {% endblock %}
 
 {% block sub_menu %}
@@ -52,30 +57,77 @@
                     </dd>
 
                     <dt class="col-sm-4 text-muted">合約代號</dt>
-                    <dd class="col-sm-8 fw-semibold">
-                        {{ contract.contract_number or '—' }}
-                    </dd>
+                    <dd class="col-sm-8 fw-semibold">{{ contract.contract_number or '—' }}</dd>
 
                     <dt class="col-sm-4 text-muted">專案代號</dt>
                     <dd class="col-sm-8">{{ contract.project_code or '—' }}</dd>
 
+                    <!-- 合約類型 + 已續約 badge -->
                     <dt class="col-sm-4 text-muted">合約類型</dt>
                     <dd class="col-sm-8">
                         <span class="badge bg-{{ 'primary' if contract.contract_type == 'new' else 'secondary' }}">
                             {{ contract.contract_type_label }}
                         </span>
-                        {% if contract.parent_contract %}
-                        <span class="ms-2 text-muted small">
-                            前一張：
-                            <a href="{{ url_for('customer_ops.contract_detail',
-                                                account_id=account.id,
-                                                contract_id=contract.parent_contract.id) }}"
-                               class="text-decoration-none">
-                                {{ contract.parent_contract.contract_number or '（未填代號）' }}
-                            </a>
+                        {% if contract.has_renewal %}
+                        <span class="badge bg-success ms-1">
+                            <i class="fas fa-sync-alt me-1"></i>已續約
                         </span>
                         {% endif %}
                     </dd>
+
+                    <!-- 前一張合約（多張列表） -->
+                    <dt class="col-sm-4 text-muted">繼承自</dt>
+                    <dd class="col-sm-8">
+                        {% set parents = contract.active_parent_contracts %}
+                        {% if parents %}
+                        <div class="d-flex flex-column gap-1">
+                            {% for p in parents %}
+                            <div>
+                                <a href="{{ url_for('customer_ops.contract_detail',
+                                                    account_id=account.id,
+                                                    contract_id=p.id) }}"
+                                   class="text-decoration-none fw-semibold">
+                                    {{ p.contract_number or '（未填代號）' }}
+                                </a>
+                                {% if p.end_date %}
+                                <span class="text-muted small ms-1">
+                                    到期：{{ p.end_date.strftime('%Y-%m-%d') }}
+                                </span>
+                                {% endif %}
+                                <span class="badge bg-{{ p.status_color }} ms-1" style="font-size:10px;">
+                                    {{ p.status_label }}
+                                </span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <span class="text-muted">—（新合約）</span>
+                        {% endif %}
+                    </dd>
+
+                    <!-- 被哪些新合約繼承（has_renewal 時顯示） -->
+                    {% if contract.has_renewal %}
+                    <dt class="col-sm-4 text-muted">已被繼承</dt>
+                    <dd class="col-sm-8">
+                        {% set children = contract.child_contracts_m2m.filter_by(is_deleted=False).all() %}
+                        <div class="d-flex flex-column gap-1">
+                            {% for ch in children %}
+                            <div>
+                                <a href="{{ url_for('customer_ops.contract_detail',
+                                                    account_id=account.id,
+                                                    contract_id=ch.id) }}"
+                                   class="text-decoration-none fw-semibold text-success">
+                                    <i class="fas fa-arrow-right me-1"></i>
+                                    {{ ch.contract_number or '（未填代號）' }}
+                                </a>
+                                <span class="badge bg-{{ ch.status_color }} ms-1" style="font-size:10px;">
+                                    {{ ch.status_label }}
+                                </span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </dd>
+                    {% endif %}
 
                     <dt class="col-sm-4 text-muted">合約起始日</dt>
                     <dd class="col-sm-8">
@@ -86,7 +138,11 @@
                     <dd class="col-sm-8">
                         {% if contract.end_date %}
                         {{ contract.end_date.strftime('%Y-%m-%d') }}
-                        {% if contract.is_expiring_soon %}
+                        {% if contract.has_renewal %}
+                        <span class="badge bg-success ms-2">
+                            <i class="fas fa-sync-alt me-1"></i>已續約，無需警示
+                        </span>
+                        {% elif contract.is_expiring_soon %}
                         <span class="badge bg-warning text-dark ms-2">
                             <i class="fas fa-clock me-1"></i>剩 {{ contract.days_until_expiry }} 天
                         </span>
@@ -109,6 +165,16 @@
                             {{ contract.source_bom.bom_number }}
                         </a>
                         <span class="text-muted small ms-1">{{ contract.source_bom.project_name }}</span>
+                        {% if has_permission(current_user, 'customer_ops_manage') %}
+                        <form method="POST"
+                              action="{{ url_for('customer_ops.unlink_bom', account_id=account.id, contract_id=contract.id) }}"
+                              class="d-inline ms-2"
+                              onsubmit="return confirm('確定解除與此 BOM 的關聯？')">
+                            <button type="submit" class="btn btn-link btn-sm text-danger p-0">
+                                <i class="fas fa-unlink"></i> 解除關聯
+                            </button>
+                        </form>
+                        {% endif %}
                         {% else %}
                         <span class="text-muted">—（未關聯 BOM）</span>
                         {% endif %}
@@ -136,7 +202,7 @@
             <div class="card-body">
                 {% if contract.license_request_code %}
                 <div class="p-3 rounded bg-light font-monospace small text-break mb-2"
-                     style="max-height: 80px; overflow: hidden; position: relative;">
+                     style="max-height: 80px; overflow: hidden;">
                     {{ contract.license_request_code[:100] }}
                     {% if contract.license_request_code | length > 100 %}
                     <span class="text-muted">... （共 {{ contract.license_request_code | length }} 字元）</span>
@@ -172,7 +238,7 @@
             <div class="card-body">
                 {% if contract.license_issue_code %}
                 <div class="p-3 rounded bg-light font-monospace small text-break mb-2"
-                     style="max-height: 80px; overflow: hidden; position: relative;">
+                     style="max-height: 80px; overflow: hidden;">
                     {{ contract.license_issue_code[:100] }}
                     {% if contract.license_issue_code | length > 100 %}
                     <span class="text-muted">... （共 {{ contract.license_issue_code | length }} 字元）</span>
@@ -220,7 +286,7 @@
     </div>
 
     <!-- ══════════════════════════════════════════
-         右欄：狀態卡 + 完整度 + 續約鏈 + 建立時間
+         右欄：狀態卡 + 完整度 + 續約鏈
     ══════════════════════════════════════════ -->
     <div class="col-lg-4">
 
@@ -242,7 +308,11 @@
                     到期日：{{ contract.end_date.strftime('%Y-%m-%d') }}
                 </div>
                 {% endif %}
-                {% if contract.is_expiring_soon %}
+                {% if contract.has_renewal %}
+                <div class="alert alert-success mt-3 mb-0 py-2 small">
+                    <i class="fas fa-sync-alt me-1"></i>此合約已被新合約繼承
+                </div>
+                {% elif contract.is_expiring_soon %}
                 <div class="alert alert-warning mt-3 mb-0 py-2 small">
                     <i class="fas fa-exclamation-triangle me-1"></i>即將到期，請安排續約
                 </div>
@@ -313,7 +383,7 @@
                             {% if c.id == contract.id %}
                             <span class="fw-bold text-primary">
                                 {{ c.contract_number or '（未填代號）' }}
-                                <span class="badge bg-primary ms-1" style="font-size:10px">目前</span>
+                                <span class="badge bg-primary ms-1" style="font-size:10px;">目前</span>
                             </span>
                             {% else %}
                             <a href="{{ url_for('customer_ops.contract_detail',
@@ -323,11 +393,12 @@
                                 {{ c.contract_number or '（未填代號）' }}
                             </a>
                             {% endif %}
+                            {% if c.has_renewal and not loop.last %}
+                            <span class="badge bg-success ms-1" style="font-size:9px;">已續約</span>
+                            {% endif %}
                             <div class="text-muted" style="font-size:11px;">
                                 {{ c.contract_type_label }}
-                                {% if c.end_date %}
-                                · 到期 {{ c.end_date.strftime('%Y-%m-%d') }}
-                                {% endif %}
+                                {% if c.end_date %}· 到期 {{ c.end_date.strftime('%Y-%m-%d') }}{% endif %}
                             </div>
                         </div>
                         <span class="badge bg-{{ c.status_color }}" style="font-size:10px;">
@@ -341,71 +412,54 @@
         {% endif %}
 
         <!-- 建立時間 -->
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-3">
-                <dl class="row mb-0 small">
-                    <dt class="col-5 text-muted">建立時間</dt>
-                    <dd class="col-7">{{ contract.created_at.strftime('%Y-%m-%d %H:%M') }}</dd>
-                    <dt class="col-5 text-muted">最後更新</dt>
-                    <dd class="col-7">
-                        {{ contract.updated_at.strftime('%Y-%m-%d %H:%M') if contract.updated_at else '—' }}
-                    </dd>
-                </dl>
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-body p-3 small text-muted">
+                <div><i class="fas fa-clock me-1"></i>建立：{{ contract.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                {% if contract.updated_at %}
+                <div class="mt-1"><i class="fas fa-edit me-1"></i>更新：{{ contract.updated_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                {% endif %}
             </div>
         </div>
 
     </div>
 </div>
 
-<!-- 退回合約確認表單（隱藏，由 JS 觸發送出） -->
-{% if current_user.has_role('admin') or current_user.has_role('pm') %}
-<form id="return-contract-form"
-      method="POST"
-      action="{{ url_for('customer_ops.return_contract',
-                         account_id=account.id,
-                         contract_id=contract.id) }}"
-      class="d-none">
-</form>
-{% endif %}
+<!-- 退回確認 form（隱藏，由 JS 觸發） -->
+<form id="return-form" method="POST"
+      action="{{ url_for('customer_ops.return_contract', account_id=account.id, contract_id=contract.id) }}"
+      class="d-none"></form>
 
 {% endblock %}
 
 {% block extra_js %}
 <script>
 /**
- * 複製完整 KEY 到剪貼簿
+ * 複製授權 KEY 到剪貼簿
  */
 function copyKey(elementId, btn) {
-    const content = document.getElementById(elementId);
-    if (!content) return;
+    const el = document.getElementById(elementId);
+    if (!el) return;
 
-    navigator.clipboard.writeText(content.textContent.trim())
-        .then(() => {
-            const original = btn.innerHTML;
-            btn.innerHTML  = '<i class="fas fa-check me-1"></i>已複製';
-            btn.classList.replace('btn-outline-secondary', 'btn-success');
-            setTimeout(() => {
-                btn.innerHTML = original;
-                btn.classList.replace('btn-success', 'btn-outline-secondary');
-            }, 2000);
-        })
-        .catch(() => alert('複製失敗，請手動選取並複製'));
+    navigator.clipboard.writeText(el.textContent.trim()).then(function () {
+        const original = btn.innerHTML;
+        btn.innerHTML  = '<i class="fas fa-check me-1"></i>已複製';
+        btn.classList.replace('btn-outline-secondary', 'btn-success');
+        setTimeout(function () {
+            btn.innerHTML = original;
+            btn.classList.replace('btn-success', 'btn-outline-secondary');
+        }, 2000);
+    }).catch(function () {
+        alert('複製失敗，請手動選取文字複製');
+    });
 }
 
 /**
- * 退回合約確認提示
- * 確認後 submit 隱藏表單，執行軟刪除並導回客戶頁面
+ * 退回合約確認
  */
 function confirmReturn() {
-    const contractNo = "{{ contract.contract_number or '（未填代號）' }}";
-    if (!confirm(
-        '確定要退回合約「' + contractNo + '」？\n\n' +
-        '合約記錄將從列表中移除。\n' +
-        '若需重新建立，請從客戶頁面手動新增合約。'
-    )) {
-        return;
+    if (confirm('確定要退回此合約？\n合約記錄將被軟刪除，操作無法直接復原。')) {
+        document.getElementById('return-form').submit();
     }
-    document.getElementById('return-contract-form').submit();
 }
 </script>
 {% endblock %}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ account.company_name }} - 客戶營運管理 - {{ config.SYSTEM_NAME }}{% endblock %}
+{% block title %}{{ account.company_name }} - 客戶帳戶 - {{ config.SYSTEM_NAME }}{% endblock %}
 
 {% block page_title %}
 <i class="fas fa-building me-2 text-primary"></i>{{ account.company_name }}
@@ -8,51 +8,48 @@
 
 {% block sub_menu %}
 <div class="d-flex gap-2">
-    {% if has_permission(current_user, 'customer_ops_manage') %}
-    <a href="{{ url_for('customer_ops.create_contract', account_id=account.id) }}"
-       class="btn btn-success btn-sm">
-        <i class="fas fa-file-contract me-1"></i>新增合約
-    </a>
-    <a href="{{ url_for('customer_ops.edit_account', account_id=account.id) }}"
-       class="btn btn-outline-secondary btn-sm">
-        <i class="fas fa-edit me-1"></i>編輯帳戶
-    </a>
-    {% endif %}
     <a href="{{ url_for('customer_ops.index') }}" class="btn btn-outline-secondary btn-sm">
         <i class="fas fa-arrow-left me-1"></i>返回列表
     </a>
+    {% if has_permission(current_user, 'customer_ops_manage') %}
+    <a href="{{ url_for('customer_ops.edit_account', account_id=account.id) }}"
+       class="btn btn-outline-primary btn-sm">
+        <i class="fas fa-edit me-1"></i>編輯帳戶
+    </a>
+    {% endif %}
 </div>
 {% endblock %}
 
 {% block content %}
 
 <!-- ═══════════════════════════════════════════
-     頂部：公司基本資料 + 貢獻總覽
+     客戶基本資訊
 ════════════════════════════════════════════ -->
-<div class="row g-3 mb-4">
+<div class="row g-4 mb-4">
 
-    <!-- 公司資訊 -->
+    <!-- 聯絡資訊卡 -->
     <div class="col-lg-4">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-white border-bottom">
-                <h6 class="mb-0"><i class="fas fa-id-card me-2 text-muted"></i>客戶資訊</h6>
+                <h6 class="mb-0"><i class="fas fa-address-card me-2 text-primary"></i>聯絡資訊</h6>
             </div>
             <div class="card-body">
-                <dl class="row mb-0 small">
-                    {% if account.company_tax_id %}
-                    <dt class="col-sm-4 text-muted">統編</dt>
-                    <dd class="col-sm-8">{{ account.company_tax_id }}</dd>
-                    {% endif %}
+                <dl class="row mb-0">
+                    <dt class="col-sm-4 text-muted">公司名稱</dt>
+                    <dd class="col-sm-8 fw-semibold">{{ account.company_name }}</dd>
+
+                    <dt class="col-sm-4 text-muted">統一編號</dt>
+                    <dd class="col-sm-8">{{ account.company_tax_id or '—' }}</dd>
+
                     <dt class="col-sm-4 text-muted">聯絡人</dt>
-                    <dd class="col-sm-8">{{ account.contact_person or '-' }}</dd>
-                    <dt class="col-sm-4 text-muted">電話</dt>
-                    <dd class="col-sm-8">{{ account.contact_phone or '-' }}</dd>
+                    <dd class="col-sm-8">{{ account.contact_person or '—' }}</dd>
+
+                    <dt class="col-sm-4 text-muted">聯絡電話</dt>
+                    <dd class="col-sm-8">{{ account.contact_phone or '—' }}</dd>
+
                     <dt class="col-sm-4 text-muted">Email</dt>
-                    <dd class="col-sm-8">
-                        {% if account.contact_email %}
-                        <a href="mailto:{{ account.contact_email }}">{{ account.contact_email }}</a>
-                        {% else %}-{% endif %}
-                    </dd>
+                    <dd class="col-sm-8">{{ account.contact_email or '—' }}</dd>
+
                     {% if account.notes %}
                     <dt class="col-sm-4 text-muted">備註</dt>
                     <dd class="col-sm-8">{{ account.notes }}</dd>
@@ -75,7 +72,6 @@
                     <div class="fs-3 fw-bold text-success">
                         ${{ '{:,}'.format(account.total_license_value) }}
                     </div>
-                    <!-- 修正：說明文字改為「來自已成案 BOM」 -->
                     <div class="text-muted small mt-1">來自已成案 BOM</div>
                 </div>
             </div>
@@ -89,7 +85,6 @@
                     <div class="fs-3 fw-bold text-info">
                         ${{ '{:,}'.format(account.total_labor_value) }}
                     </div>
-                    <!-- 修正：說明文字改為「來自已成案 BOM」 -->
                     <div class="text-muted small mt-1">來自已成案 BOM</div>
                 </div>
             </div>
@@ -114,7 +109,7 @@
                 </div>
             </div>
 
-            <!-- 30天內到期 -->
+            <!-- 30天內到期（已排除已續約） -->
             <div class="col-sm-4">
                 <div class="card border-0 shadow-sm text-center py-3
                     {{ 'border-warning border-2' if account.expiring_soon_contracts }}">
@@ -149,8 +144,18 @@
 
         {% if account.contracts %}
 
-        {# ── 找出所有根合約（沒有 parent 的），由新到舊排列 ── #}
-        {% set root_contracts = account.contracts | selectattr('parent_contract_id', 'none') | list %}
+        {#
+            多對多架構下，根合約定義：
+            active_parent_contracts 為空（沒有被任何新合約繼承的「來源」身份是從 child 角度看，
+            這裡改為：parent_contracts（多對多）為空 且 parent_contract_id（舊版）為 None 的合約
+            作為鏈的起點，其餘透過 renewal_chain 展開
+        #}
+        {% set root_contracts = [] %}
+        {% for c in account.contracts %}
+            {% if c.active_parent_contracts | length == 0 and c.parent_contract_id is none %}
+                {% set _ = root_contracts.append(c) %}
+            {% endif %}
+        {% endfor %}
         {% set root_contracts = root_contracts | sort(attribute='created_at', reverse=True) %}
 
         <div class="table-responsive">
@@ -198,11 +203,16 @@
                                 {% endif %}
                             </td>
 
-                            <!-- 合約類型 -->
+                            <!-- 合約類型 + 已續約 badge -->
                             <td>
                                 <span class="badge bg-{{ 'primary' if contract.contract_type == 'new' else 'info' }}">
                                     {{ contract.contract_type_label }}
                                 </span>
+                                {% if contract.has_renewal %}
+                                <span class="badge bg-success ms-1" title="此合約已被新合約繼承">
+                                    <i class="fas fa-sync-alt me-1"></i>已續約
+                                </span>
+                                {% endif %}
                             </td>
 
                             <!-- 合約期間 -->
@@ -213,6 +223,11 @@
                                     <span class="text-muted mx-1">→</span>
                                     {{ contract.end_date.strftime('%Y-%m-%d') }}
                                 </span>
+                                {% if contract.is_expiring_soon and not contract.has_renewal %}
+                                <span class="badge bg-warning text-dark ms-1 small">
+                                    剩 {{ contract.days_until_expiry }} 天
+                                </span>
+                                {% endif %}
                                 {% else %}
                                 <span class="text-muted small">未填寫</span>
                                 {% endif %}
@@ -254,14 +269,14 @@
                         </tr>
                         {% endfor %}
 
-                        {# ── 鏈末端若無後續合約，顯示「未續約」提示 ── #}
+                        {# ── 鏈末端：已到期且未續約時顯示提示 ── #}
                         {% set last = chain | last %}
-                        {% if last.status == 'expired' and not last.child_contracts.first() %}
-                        <tr class="table-light">
+                        {% if last.status == 'expired' and not last.has_renewal %}
+                        <tr class="table-warning">
                             <td></td>
-                            <td colspan="7" class="small text-muted ps-4">
-                                <i class="fas fa-exclamation-triangle text-warning me-1"></i>
-                                此合約已到期且尚未建立續約
+                            <td colspan="7" class="small text-warning py-2">
+                                <i class="fas fa-exclamation-triangle me-1"></i>
+                                此合約已到期且尚未續約，請確認是否需要安排續約。
                             </td>
                         </tr>
                         {% endif %}
@@ -277,20 +292,26 @@
             尚無合約記錄
         </div>
         {% endif %}
+
     </div>
 </div>
 
 <!-- ═══════════════════════════════════════════
-     關聯 BOM 列表
+     關聯 BOM 記錄
 ════════════════════════════════════════════ -->
-<div class="card border-0 shadow-sm">
+{% set won_boms = account._won_boms() %}
+<div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white border-bottom">
-        <h6 class="mb-0"><i class="fas fa-clipboard-list me-2 text-muted"></i>關聯 BOM</h6>
+        <h6 class="mb-0">
+            <i class="fas fa-clipboard-list me-2 text-primary"></i>關聯 BOM 記錄
+            <span class="badge bg-secondary ms-1">{{ won_boms | length }} 件已成案</span>
+        </h6>
     </div>
     <div class="card-body p-0">
-        {% if boms %}
+
+        {% if won_boms %}
         <div class="table-responsive">
-            <table class="table table-sm table-hover align-middle mb-0">
+            <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
                         <th>BOM 編號</th>
@@ -298,33 +319,25 @@
                         <th>方案</th>
                         <th class="text-end">授權金額</th>
                         <th class="text-end">人力金額</th>
-                        <!-- 修正：欄位標題由「審核狀態」改為「專案狀態」 -->
                         <th class="text-center">專案狀態</th>
                         <th class="text-end">操作</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for bom in boms %}
+                    {% for bom in won_boms | sort(attribute='created_at', reverse=True) %}
                     <tr>
-                        <!-- BOM 編號 -->
                         <td>
                             <a href="{{ url_for('bom.detail', bom_id=bom.id) }}"
-                               class="text-decoration-none text-primary small fw-semibold">
+                               class="fw-semibold text-decoration-none">
                                 {{ bom.bom_number }}
                             </a>
                         </td>
-
-                        <!-- 專案名稱 -->
-                        <td class="text-truncate" style="max-width:180px;">
+                        <td class="text-truncate" style="max-width: 180px;">
                             {{ bom.project_name }}
                         </td>
-
-                        <!-- 方案 -->
                         <td>
                             <small class="text-muted">{{ bom.get_plan_type_display() }}</small>
                         </td>
-
-                        <!-- 授權金額 -->
                         <td class="text-end">
                             {% set license_val = bom.final_price or bom.suggested_price or 0 %}
                             {% if license_val %}
@@ -333,8 +346,6 @@
                             <small class="text-muted">-</small>
                             {% endif %}
                         </td>
-
-                        <!-- 人力金額 -->
                         <td class="text-end">
                             {% set labor_val = bom.final_maintenance_price or bom.labor_suggested_price or 0 %}
                             {% if labor_val %}
@@ -343,15 +354,11 @@
                             <small class="text-muted">-</small>
                             {% endif %}
                         </td>
-
-                        <!-- 修正：改顯示專案狀態，而非審核狀態 -->
                         <td class="text-center">
                             <span class="badge bg-{{ bom.get_project_status_color() }}">
                                 {{ bom.get_project_status_display() }}
                             </span>
                         </td>
-
-                        <!-- 操作 -->
                         <td class="text-end">
                             <a href="{{ url_for('bom.detail', bom_id=bom.id) }}"
                                class="btn btn-sm btn-outline-secondary">
@@ -370,6 +377,7 @@
             尚無關聯 BOM
         </div>
         {% endif %}
+
     </div>
 </div>
 

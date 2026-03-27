@@ -45,7 +45,6 @@
             </h6>
         </div>
         <div class="card-body p-4">
-
             <div class="row g-3">
 
                 <!-- 合約代號 -->
@@ -72,7 +71,7 @@
                 <!-- 合約類型 -->
                 <div class="col-md-6">
                     <label class="form-label fw-semibold">合約類型</label>
-                    <select class="form-select" name="contract_type">
+                    <select class="form-select" name="contract_type" id="contract_type">
                         <option value="new"
                             {{ 'selected' if not contract or contract.contract_type == 'new' }}>
                             新合約
@@ -84,32 +83,12 @@
                     </select>
                 </div>
 
-                <!-- 前一張合約（續約追蹤） -->
-                <div class="col-md-6">
-                    <label class="form-label fw-semibold">
-                        前一張合約
-                        <small class="text-muted fw-normal">（續約時選填）</small>
-                    </label>
-                    <select class="form-select" name="parent_contract_id">
-                        <option value="">— 無（新合約）—</option>
-                        {% for c in existing_contracts %}
-                        <option value="{{ c.id }}"
-                            {{ 'selected' if contract and contract.parent_contract_id == c.id }}>
-                            {{ c.contract_number or '（未填代號）' }}
-                            {% if c.end_date %}
-                                到期：{{ c.end_date.strftime('%Y-%m-%d') }}
-                            {% endif %}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
                 <!-- 來源 BOM（新建時顯示） -->
                 {% if not contract and available_boms %}
-                <div class="col-12">
+                <div class="col-md-6">
                     <label class="form-label fw-semibold">
                         關聯 BOM
-                        <small class="text-muted fw-normal">（選填，連結此合約的來源 BOM）</small>
+                        <small class="text-muted fw-normal">（選填）</small>
                     </label>
                     <select class="form-select" name="bom_id">
                         <option value="">— 不關聯 BOM —</option>
@@ -123,6 +102,91 @@
                 {% endif %}
 
             </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════
+         前一張合約（多選 checkbox）
+    ══════════════════════════════════ -->
+    <div class="card border-0 shadow-sm mb-4" id="parent_contracts_card">
+        <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">
+                <i class="fas fa-link me-2 text-secondary"></i>繼承的前一張合約
+                <small class="text-muted fw-normal ms-1">（續約時選填，可多選）</small>
+            </h6>
+            {% if existing_contracts %}
+            <span class="badge bg-light text-muted border">已勾選 <span id="selected_count">{{ selected_parent_ids | length }}</span> 張</span>
+            {% endif %}
+        </div>
+        <div class="card-body p-4">
+
+            {% if existing_contracts %}
+            <div class="mb-2 text-muted small">
+                <i class="fas fa-info-circle me-1"></i>
+                勾選此新合約所要繼承的舊合約，被繼承的舊合約將標示為「已續約」並排除到期警示。
+            </div>
+
+            <div class="row g-2 mt-1">
+                {% for c in existing_contracts %}
+                {% set is_checked = c.id in selected_parent_ids %}
+                <div class="col-12">
+                    <label class="d-flex align-items-start gap-3 p-3 border rounded cursor-pointer parent-contract-item
+                                  {{ 'border-primary bg-primary bg-opacity-10' if is_checked else 'border-light' }}"
+                           for="parent_{{ c.id }}"
+                           style="cursor:pointer;">
+                        <input class="form-check-input flex-shrink-0 mt-1 parent-checkbox"
+                               type="checkbox"
+                               name="parent_contract_ids"
+                               value="{{ c.id }}"
+                               id="parent_{{ c.id }}"
+                               {{ 'checked' if is_checked }}>
+                        <div class="flex-grow-1">
+                            <div class="d-flex align-items-center gap-2 flex-wrap">
+                                <span class="fw-semibold">
+                                    {{ c.contract_number or '（未填代號）' }}
+                                </span>
+                                {% if c.project_code %}
+                                <span class="text-muted small">{{ c.project_code }}</span>
+                                {% endif %}
+                                <span class="badge bg-{{ c.status_color }}">{{ c.status_label }}</span>
+                                {% if c.has_renewal %}
+                                <span class="badge bg-info text-white">
+                                    <i class="fas fa-sync-alt me-1"></i>已續約
+                                </span>
+                                {% endif %}
+                            </div>
+                            <div class="text-muted small mt-1">
+                                {% if c.start_date and c.end_date %}
+                                <i class="fas fa-calendar me-1"></i>
+                                {{ c.start_date.strftime('%Y-%m-%d') }} ～ {{ c.end_date.strftime('%Y-%m-%d') }}
+                                {% if c.days_until_expiry is not none %}
+                                    {% if c.days_until_expiry < 0 %}
+                                    <span class="text-secondary ms-1">（已過期 {{ c.days_until_expiry | abs }} 天）</span>
+                                    {% elif c.days_until_expiry <= 30 %}
+                                    <span class="text-warning ms-1">（剩 {{ c.days_until_expiry }} 天）</span>
+                                    {% endif %}
+                                {% endif %}
+                                {% else %}
+                                <i class="fas fa-calendar me-1"></i>尚未填寫合約期間
+                                {% endif %}
+                                {% if c.source_bom %}
+                                <span class="ms-2">
+                                    <i class="fas fa-file-alt me-1"></i>{{ c.source_bom.bom_number }}
+                                </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+
+            {% else %}
+            <div class="text-muted small text-center py-3">
+                <i class="fas fa-info-circle me-1"></i>此客戶目前尚無其他合約可選
+            </div>
+            {% endif %}
+
         </div>
     </div>
 
@@ -157,7 +221,8 @@
                     <div class="d-flex gap-2 align-items-center flex-wrap">
                         <span class="text-muted small">快速設定合約長度：</span>
                         {% for y in [1, 2, 3] %}
-                        <button type="button" class="btn btn-outline-secondary btn-sm"
+                        <button type="button"
+                                class="btn btn-outline-secondary btn-sm"
                                 onclick="setContractYears({{ y }})">
                             {{ y }} 年
                         </button>
@@ -269,12 +334,62 @@ function setContractYears(years) {
         return;
     }
 
-    const start  = new Date(startInput.value);
-    const end    = new Date(start);
+    const start = new Date(startInput.value);
+    const end   = new Date(start);
     end.setFullYear(end.getFullYear() + years);
-    end.setDate(end.getDate() - 1);   // 到期日為起始日前一天（例：1/1 起始，12/31 到期）
+    end.setDate(end.getDate() - 1);   // 到期日為起始日前一天
 
     endInput.value = end.toISOString().split('T')[0];
 }
+
+/**
+ * checkbox 勾選時更新卡片樣式與計數
+ */
+document.addEventListener('DOMContentLoaded', function () {
+    const checkboxes  = document.querySelectorAll('.parent-checkbox');
+    const countBadge  = document.getElementById('selected_count');
+
+    function updateStyle(checkbox) {
+        const label = checkbox.closest('.parent-contract-item');
+        if (!label) return;
+        if (checkbox.checked) {
+            label.classList.add('border-primary', 'bg-primary', 'bg-opacity-10');
+            label.classList.remove('border-light');
+        } else {
+            label.classList.remove('border-primary', 'bg-primary', 'bg-opacity-10');
+            label.classList.add('border-light');
+        }
+    }
+
+    function updateCount() {
+        if (!countBadge) return;
+        const checked = document.querySelectorAll('.parent-checkbox:checked').length;
+        countBadge.textContent = checked;
+    }
+
+    checkboxes.forEach(function (cb) {
+        cb.addEventListener('change', function () {
+            updateStyle(this);
+            updateCount();
+        });
+        updateStyle(cb);   // 初始化樣式（頁面載入時）
+    });
+
+    /**
+     * 合約類型切換：選「新合約」時自動取消所有 parent 勾選
+     */
+    const contractTypeSelect = document.getElementById('contract_type');
+    if (contractTypeSelect) {
+        contractTypeSelect.addEventListener('change', function () {
+            if (this.value === 'new') {
+                checkboxes.forEach(function (cb) {
+                    cb.checked = false;
+                    updateStyle(cb);
+                });
+                updateCount();
+            }
+        });
+    }
+});
 </script>
 {% endblock %}
